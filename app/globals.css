@@ -1,0 +1,86 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+:root {
+  /* 背景 */
+  --bg-night: linear-gradient(180deg, #0b1026 0%, #1e1b3a 100%);
+
+  /* 文字四级 */
+  --text-primary: #f5f1e8; /* 主文字 · 月白 */
+  --text-gold: #e8c88a; /* 金色强调 */
+  --text-gold-deep: #967c4e; /* 金色暗部 */
+  --text-muted: #8a8aa3; /* 次级灰 */
+
+  /* 玻璃卡片 */
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: 20px;
+  --glass-radius: 24px;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--text-primary);
+  background: #0b1026;
+  font-family: var(--font-sans), "Noto Sans SC", sans-serif;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- 背景三层叠加 ---- */
+
+.bg-stage {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  background: var(--bg-night); /* 底层 */
+  overflow-x: clip;
+}
+
+/* 中层：大尺寸径向渐变光晕，顶部偏上 */
+.bg-stage::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  top: -40vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120vw;
+  height: 90vh;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(232, 200, 138, 0.35) 0%,
+    rgba(94, 84, 142, 0.3) 45%,
+    transparent 70%
+  );
+  filter: blur(240px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 顶层：noise 纹理 */
+.bg-stage::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* ---- 玻璃卡片 ---- */
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+}
