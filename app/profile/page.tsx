@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Download, HeartHandshake, Trash2 } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
+import { anonUserId } from "@/lib/user";
 
 // 日历热力图占位：5 周 × 7 天，0–3 档情绪强度（静态假数据，后续接真实数据）
 const heat = [
@@ -18,6 +20,20 @@ const heatClasses = [
 ] as const;
 
 export default function ProfilePage() {
+  const [stats, setStats] = useState({ dreamCount: 0, iamtooCount: 0 });
+
+  useEffect(() => {
+    fetch(`/api/stats?userId=${anonUserId()}`)
+      .then((r) => r.json())
+      .then((d) =>
+        setStats({
+          dreamCount: d.dreamCount ?? 0,
+          iamtooCount: d.iamtooCount ?? 0,
+        }),
+      )
+      .catch(() => {});
+  }, []);
+
   return (
     <main className="mx-auto min-h-screen max-w-md space-y-8 px-6 pb-32 pt-14">
       <motion.header {...fadeIn}>
@@ -27,12 +43,12 @@ export default function ProfilePage() {
 
       <motion.section {...fadeIn} className="grid grid-cols-2 gap-4">
         <div className="glass p-6">
-          <p className="font-serif text-4xl text-gold">247</p>
+          <p className="font-serif text-4xl text-gold">{stats.dreamCount}</p>
           <p className="mt-2 text-sm text-muted">累计记录的梦</p>
         </div>
         <div className="glass p-6">
           <p className="flex items-baseline gap-2 font-serif text-4xl text-gold">
-            132
+            {stats.iamtooCount}
             <HeartHandshake strokeWidth={1.5} className="h-5 w-5 self-center" />
           </p>
           <p className="mt-2 text-sm text-muted">被「我也是」的次数</p>

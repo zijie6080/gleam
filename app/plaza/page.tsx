@@ -1,137 +1,95 @@
-"use client";
-
-import { motion } from "framer-motion";
-import { Heart, Link2, MessageCircleQuestion, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, Waves } from "lucide-react";
 import Art from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
-import { fadeIn } from "@/lib/motion";
+import IamtooButton from "@/components/IamtooButton";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const filters = [
-  { label: "最新", active: false },
-  { label: "待回响", active: true },
-  { label: "高共鸣", active: false },
-];
+export const dynamic = "force-dynamic";
 
-const aiActions = [
-  { label: "共感", Icon: Heart },
-  { label: "联想", Icon: Link2 },
-  { label: "追问", Icon: MessageCircleQuestion },
-];
+// 回响广场：二级页面（入口在梦境详情的「投放回响」）。
+// 只展示 visibility = public 的梦——默认私有，发布需显式操作。
+export default async function PlazaPage() {
+  const db = supabaseAdmin();
+  const { data: dreams } = await db
+    .from("dreams")
+    .select("id, raw_text, created_at, dream_motifs(motifs(name))")
+    .eq("visibility", "public")
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-const cards = [
-  {
-    title: "我走进一扇发光的门",
-    lines: ["门后是熟悉的街道，却没有人。", "我一直在找一个人，却想不起是谁。"],
-    tags: ["门", "探索", "记忆", "寻找"],
-  },
-  {
-    title: "我爬上没有尽头的楼梯",
-    lines: ["每一步都很轻，却永远到不了顶端。", "我在找出口，还是在找答案？"],
-    tags: ["楼梯", "迷途", "成长", "追寻"],
-  },
-];
+  const cards = (dreams ?? []).map((d) => ({
+    id: d.id,
+    text: d.raw_text,
+    tags: (d.dream_motifs ?? [])
+      .map((l) => (l.motifs as unknown as { name: string })?.name)
+      .filter(Boolean)
+      .slice(0, 4),
+  }));
 
-function CardHead({
-  title,
-  lines,
-  tags,
-}: {
-  title: string;
-  lines: string[];
-  tags: string[];
-}) {
-  return (
-    <div className="flex gap-5">
-      <Art className="h-28 w-28 shrink-0 rounded-glass" />
-      <div className="space-y-3">
-        <h2 className="font-serif text-xl text-ink">{title}</h2>
-        <div className="text-sm leading-relaxed text-muted">
-          {lines.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full border border-gold-deep px-2.5 py-0.5 text-xs text-gold"
-            >
-              {tag}
-            </span>
-          ))}
-          <span className="ml-auto text-xs text-muted">12 回响</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function PlazaPage() {
   return (
     <main className="mx-auto min-h-screen max-w-md space-y-6 px-6 pb-32 pt-14">
-      <motion.header {...fadeIn} className="space-y-5 px-2">
+      <header className="space-y-2 px-2">
         <h1 className="font-serif text-4xl text-ink">回响广场</h1>
-        <div className="flex items-center gap-3 text-sm">
-          {filters.map(({ label, active }, i) => (
-            <span key={label} className="flex items-center gap-3">
-              {i > 0 && <span className="text-muted">·</span>}
-              <span
-                className={
-                  active
-                    ? "border-b border-gold pb-1 text-gold"
-                    : "text-muted"
-                }
-              >
-                {label}
-              </span>
-            </span>
-          ))}
-        </div>
-      </motion.header>
+        <p className="text-xs text-muted">以下为文化视角参考，非心理诊断</p>
+      </header>
 
-      <motion.article {...fadeIn} className="glass space-y-5 p-5">
-        <CardHead
-          title="我在梦里遇见一只鲸鱼"
-          lines={[
-            "它静静地从云层中游过，周围没有水，",
-            "只有风在流动。",
-            "我想触碰它，却醒了。",
-          ]}
-          tags={["鲸鱼", "飞行", "孤独", "梦中相遇"]}
-        />
-
-        <div className="glass space-y-4 p-5">
-          <div className="flex items-center gap-3">
-            <Sparkles strokeWidth={1.5} className="h-5 w-5 text-gold" />
-            <span className="text-ink">AI 意象拆解</span>
-          </div>
-          <p className="text-xs text-muted">以下为文化视角参考，非心理诊断</p>
-          <p className="text-sm leading-relaxed text-ink">
-            鲸鱼在梦中常象征深层的情感与潜意识的智慧。它在云层中游动，
-            可能反映了你对自由与超越现实的渴望，也暗示你正与内在深处
-            的自己相遇。触碰未果，或许表达了你对连接的向往与现实中的
-            距离感。
+      {cards.length === 0 && (
+        <div className="flex flex-col items-center gap-6 pt-24 text-center">
+          <Waves strokeWidth={1.5} className="h-8 w-8 text-gold" />
+          <p className="font-serif text-xl leading-relaxed text-ink">
+            广场还很安静。
           </p>
+          <p className="text-sm leading-relaxed text-muted">
+            梦默认只属于你自己。
+            <br />
+            在梦的详情里选择「投放回响」，它才会出现在这里。
+          </p>
+          <Link
+            href="/capture"
+            className="glass px-10 py-3 font-serif text-gold transition-opacity duration-fade hover:opacity-70"
+          >
+            先去记一个梦
+          </Link>
         </div>
-
-        <div className="flex gap-3">
-          {aiActions.map(({ label, Icon }) => (
-            <button
-              key={label}
-              className="glass flex flex-1 items-center justify-center gap-2 !rounded-2xl py-3 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
-            >
-              <Icon strokeWidth={1.5} className="h-4 w-4 text-gold" />
-              {label}
-            </button>
-          ))}
-        </div>
-      </motion.article>
+      )}
 
       {cards.map((card) => (
-        <motion.article key={card.title} {...fadeIn} className="glass p-5">
-          <CardHead {...card} />
-        </motion.article>
+        <article key={card.id} className="glass space-y-4 p-5">
+          <div className="flex gap-5">
+            <Art className="h-24 w-24 shrink-0 rounded-glass" />
+            <div className="space-y-3">
+              <Link
+                href={`/dream/${card.id}`}
+                className="block font-serif text-lg leading-snug text-ink transition-opacity duration-fade hover:opacity-70"
+              >
+                {card.text.slice(0, 40)}
+                {card.text.length > 40 ? "…" : ""}
+              </Link>
+              {card.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {card.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-gold-deep px-2.5 py-0.5 text-xs text-gold"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <IamtooButton dreamId={card.id} />
+        </article>
       ))}
+
+      {cards.length > 0 && (
+        <p className="flex items-center gap-2 px-2 text-xs text-muted">
+          <Sparkles strokeWidth={1.5} className="h-3.5 w-3.5" />
+          回响不落空：每个梦都会先收到 AI 的意象拆解
+        </p>
+      )}
 
       <BottomNav />
     </main>

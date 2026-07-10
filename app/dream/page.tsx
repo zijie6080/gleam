@@ -1,69 +1,42 @@
-"use client";
-
-import { motion } from "framer-motion";
-import { ChevronDown, Feather, RefreshCw, Waves } from "lucide-react";
-import Art from "@/components/Art";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Feather } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
-import { fadeIn } from "@/lib/motion";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const tags = ["坠落", "水", "月", "独身"];
+export const dynamic = "force-dynamic";
 
-const actions = [
-  { label: "再生成", Icon: RefreshCw },
-  { label: "续写故事", Icon: Feather },
-  { label: "投放回响", Icon: Waves },
-];
+// /dream = 最近一个梦；一个都没有时给空状态引导（v2 §8）
+export default async function DreamIndexPage() {
+  const db = supabaseAdmin();
+  const { data: latest } = await db
+    .from("dreams")
+    .select("id")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-export default function DreamPage() {
+  if (latest) redirect(`/dream/${latest.id}`);
+
   return (
-    <main className="mx-auto min-h-screen max-w-md pb-32">
-      <Art className="h-[46vh] w-full" />
-
-      <motion.div {...fadeIn} className="space-y-6 px-6">
-        <div className="space-y-3">
-          <h1 className="font-serif text-4xl text-ink">坠入无声的海</h1>
-          <p className="text-sm text-muted">
-            7月8日 · 清醒度 · 情绪 <span className="text-ink">沉静</span>
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          {tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full border border-gold-deep px-5 py-1.5 text-sm text-gold"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-
-        <div className="space-y-2 leading-relaxed text-ink">
-          <p>我从高处坠落，却没有恐惧。</p>
-          <p>风在耳边退去，世界变得越来越静，</p>
-          <p>直到我落进一片黑色的海，柔软，冰冷，接住了我。</p>
-        </div>
-
-        <button className="flex items-center gap-2 text-gold transition-opacity duration-fade hover:opacity-70">
-          展开全文
-          <ChevronDown strokeWidth={1.5} className="h-4 w-4" />
-        </button>
-
-        <div className="flex justify-between pt-8">
-          {actions.map(({ label, Icon }) => (
-            <button
-              key={label}
-              className="flex flex-col items-center gap-3 transition-opacity duration-fade hover:opacity-70"
-            >
-              <span className="glass flex h-20 w-20 items-center justify-center !rounded-full">
-                <Icon strokeWidth={1.5} className="h-6 w-6 text-gold" />
-              </span>
-              <span className="text-sm text-ink">{label}</span>
-            </button>
-          ))}
-        </div>
-      </motion.div>
-
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-32 pt-14">
+      <div className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
+        <Feather strokeWidth={1.5} className="h-8 w-8 text-gold" />
+        <p className="font-serif text-2xl leading-relaxed text-ink">
+          你还没有留下过梦。
+        </p>
+        <p className="text-sm leading-relaxed text-muted">
+          醒来的五分钟里，梦最完整。
+          <br />
+          下次醒来，说给我听。
+        </p>
+        <Link
+          href="/capture"
+          className="glass px-10 py-3 font-serif text-lg text-gold transition-opacity duration-fade hover:opacity-70"
+        >
+          去记录
+        </Link>
+      </div>
       <BottomNav />
     </main>
   );

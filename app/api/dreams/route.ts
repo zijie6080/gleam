@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDream } from "@/lib/dreams";
 
 // POST /api/dreams — 文本入库 + 意象提取 + embedding
-// body: { text: string, userId?, emotion?, lucidity?, isRecurring? }
+// body: { text, userId?, emotionScore?, lucidity?, isRecurring?, localHour? }
 export async function POST(req: NextRequest) {
   let body: {
     text?: unknown;
     userId?: string;
-    emotion?: string;
+    emotionScore?: number;
     lucidity?: number;
     isRecurring?: boolean;
+    localHour?: number;
   };
   try {
     body = await req.json();
@@ -34,15 +35,13 @@ export async function POST(req: NextRequest) {
     const result = await createDream({
       text: body.text.trim(),
       userId: body.userId,
-      emotion: body.emotion,
+      emotionScore: body.emotionScore,
       lucidity: body.lucidity,
       isRecurring: body.isRecurring,
+      localHour: body.localHour,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (e) {
-    return NextResponse.json(
-      { error: (e as Error).message },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }

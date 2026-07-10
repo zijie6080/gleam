@@ -1,0 +1,338 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { ChevronDown, HeartHandshake, LifeBuoy, Send, Star, Waves } from "lucide-react";
+import DreamImage from "@/components/DreamImage";
+import BottomNav from "@/components/BottomNav";
+import { fadeIn } from "@/lib/motion";
+import { anonUserId } from "@/lib/user";
+
+export type DreamData = {
+  id: string;
+  raw_text: string;
+  lucidity: number | null;
+  emotion_score: number | null;
+  is_night_mode: boolean;
+  created_at: string;
+  motifs: string[];
+};
+
+const PRESET_WORDS = ["坠落", "等待", "失去", "自由", "追逐", "无声"];
+
+function emotionLabel(score: number | null) {
+  if (score === null) return null;
+  if (score > 0.3) return "平静";
+  if (score < -0.3) return "惊惧";
+  return "沉静";
+}
+
+export default function DreamView({ dream }: { dream: DreamData }) {
+  const [expanded, setExpanded] = useState(false);
+  const [iamtooCount, setIamtooCount] = useState(0);
+  const [iamtooDone, setIamtooDone] = useState(false);
+  const [wordSent, setWordSent] = useState(false);
+  const [customWord, setCustomWord] = useState("");
+  const [wordCloud, setWordCloud] = useState<{ word: string; count: number }[]>([]);
+  const [wordTotal, setWordTotal] = useState(0);
+  const [echoesOpen, setEchoesOpen] = useState(false);
+  const [echoes, setEchoes] = useState<{ id: string; content: string }[]>([]);
+  const [echoInput, setEchoInput] = useState("");
+  const [resonance, setResonance] = useState<{ count: number; motif: string | null } | null>(null);
+  const [findings, setFindings] = useState<{ message: string }[]>([]);
+
+  const date = new Date(dream.created_at);
+  const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
+  const lines = dream.raw_text.split("\n").filter(Boolean);
+  const preview = expanded ? lines : lines.slice(0, 3);
+
+  useEffect(() => {
+    if (dream.is_night_mode) return;
+    fetch(`/api/dreams/${dream.id}/iamtoo`)
+      .then((r) => r.json())
+      .then((d) => setIamtooCount(d.count ?? 0))
+      .catch(() => {});
+    fetch(`/api/dreams/${dream.id}/words`)
+      .then((r) => r.json())
+      .then((d) => {
+        setWordCloud(d.top ?? []);
+        setWordTotal(d.total ?? 0);
+      })
+      .catch(() => {});
+    fetch(`/api/dreams/${dream.id}/resonance`)
+      .then((r) => r.json())
+      .then((d) => setResonance(d))
+      .catch(() => {});
+    fetch(`/api/dreams/${dream.id}/archaeology`)
+      .then((r) => r.json())
+      .then((d) => setFindings(d.findings ?? []))
+      .catch(() => {});
+  }, [dream.id, dream.is_night_mode]);
+
+  async function sendIamtoo() {
+    if (iamtooDone) return; // 不可撤销，不可重复
+    setIamtooDone(true);
+    const res = await fetch(`/api/dreams/${dream.id}/iamtoo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: anonUserId() }),
+    }).catch(() => null);
+    if (res?.ok) setIamtooCount((await res.json()).count);
+  }
+
+  async function sendWord(word: string) {
+    if (wordSent || !word.trim()) return;
+    setWordSent(true);
+    await fetch(`/api/dreams/${dream.id}/words`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: anonUserId(), word: word.trim() }),
+    }).catch(() => {});
+  }
+
+  async function openEchoes() {
+    setEchoesOpen(true);
+    const res = await fetch(`/api/dreams/${dream.id}/echoes`).catch(() => null);
+    if (res?.ok) setEchoes((await res.json()).echoes ?? []);
+  }
+
+  async function sendEcho() {
+    const content = echoInput.trim();
+    if (!content) return;
+    setEchoInput("");
+    const res = await fetch(`/api/dreams/${dream.id}/echoes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: anonUserId(), content }),
+    }).catch(() => null);
+    if (res?.ok) {
+      const { echo } = await res.json();
+      setEchoes((prev) => [...prev, echo]);
+    }
+  }
+
+  // 深夜模式：不解读、不生成、不推送。产品让路。
+  if (dream.is_night_mode) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-32 pt-14">
+        <motion.div
+          {...fadeIn}
+          className="flex flex-1 flex-col items-center justify-center gap-8 text-center"
+        >
+          <p className="font-serif text-3xl leading-relaxed tracking-wider text-ink">
+            你记下来了。
+            <br />
+            天亮了再看。
+          </p>
+          <a
+            href="https://www.chinacdc.cn/xlwsrx/"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="心理援助资源"
+            className="text-muted transition-opacity duration-fade hover:opacity-70"
+          >
+            <LifeBuoy strokeWidth={1.5} className="h-5 w-5" />
+          </a>
+        </motion.div>
+        <BottomNav />
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto min-h-screen max-w-md pb-32">
+      <DreamImage src={null} />
+
+      <motion.div {...fadeIn} className="space-y-6 px-6">
+        <div className="space-y-3">
+          <h1 className="font-serif text-3xl leading-snug text-ink">
+            {(lines[0]?.slice(0, 12) ?? "一个梦").replace(/[，。、；：,.;:]+$/, "")}
+          </h1>
+          <p className="flex items-center gap-2 text-sm text-muted">
+            {dateStr}
+            {dream.lucidity !== null && (
+              <>
+                <span>·</span> 清醒度
+                <span className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      strokeWidth={1.5}
+                      className={`h-3.5 w-3.5 ${
+                        n <= (dream.lucidity ?? 0)
+                          ? "text-gold"
+                          : "text-gold-deep"
+                      }`}
+                      fill={n <= (dream.lucidity ?? 0) ? "currentColor" : "none"}
+                    />
+                  ))}
+                </span>
+              </>
+            )}
+            {emotionLabel(dream.emotion_score) && (
+              <>
+                <span>·</span> 情绪{" "}
+                <span className="text-ink">
+                  {emotionLabel(dream.emotion_score)}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+
+        {dream.motifs.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+            {dream.motifs.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-gold-deep px-5 py-1.5 text-sm text-gold"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-2 leading-relaxed text-ink">
+          {preview.map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
+        {lines.length > 3 && !expanded && (
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex items-center gap-2 text-gold transition-opacity duration-fade hover:opacity-70"
+          >
+            展开全文
+            <ChevronDown strokeWidth={1.5} className="h-4 w-4" />
+          </button>
+        )}
+
+        {/* 意象考古 */}
+        {findings.length > 0 && (
+          <div className="glass space-y-2 p-5">
+            {findings.map((f) => (
+              <p key={f.message} className="text-sm leading-relaxed text-gold">
+                {f.message}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* 产品心跳：0 时不显示 */}
+        {resonance && resonance.count > 0 && (
+          <div className="glass p-5">
+            <p className="font-serif text-lg leading-relaxed text-ink">
+              昨晚，有 {resonance.count} 个人和你梦见了
+              {resonance.motif ? `「${resonance.motif}」` : "同一件事"}。
+            </p>
+          </div>
+        )}
+
+        {/* 第一级：「我也是」——最高频社交行为，最大点击区域 */}
+        <button
+          onClick={sendIamtoo}
+          disabled={iamtooDone}
+          className={`glass w-full py-4 font-serif text-lg transition-opacity duration-fade ${
+            iamtooDone
+              ? "!border-gold text-gold"
+              : "text-ink hover:opacity-70"
+          }`}
+        >
+          {iamtooDone ? "已共鸣" : "我也是"}
+        </button>
+        {iamtooCount > 0 && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <HeartHandshake strokeWidth={1.5} className="h-4 w-4 text-gold" />
+            有 {iamtooCount} 个人说，他们也梦见过这个
+          </p>
+        )}
+
+        {/* 第二级：一个词 */}
+        <div className="space-y-3">
+          {wordCloud.length > 0 && (
+            <p className="text-sm leading-relaxed text-muted">
+              {wordTotal} 个人看了这个梦。最常想到的
+              {wordCloud.length > 1 ? `${wordCloud.length} 个词` : "词"}是：
+              <span className="text-gold">
+                {wordCloud.map((w) => w.word).join("、")}
+              </span>
+              。
+            </p>
+          )}
+          {!wordSent ? (
+            <>
+              <p className="text-sm text-muted">这个梦让你想到什么？</p>
+              <div className="flex flex-wrap gap-2">
+                {PRESET_WORDS.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => sendWord(w)}
+                    className="rounded-full border border-gold-deep px-4 py-1 text-sm text-gold transition-opacity duration-fade hover:opacity-70"
+                  >
+                    {w}
+                  </button>
+                ))}
+                <input
+                  value={customWord}
+                  onChange={(e) => setCustomWord(e.target.value.slice(0, 4))}
+                  onKeyDown={(e) => e.key === "Enter" && sendWord(customWord)}
+                  placeholder="一个词"
+                  className="w-20 rounded-full border border-glass-border bg-transparent px-4 py-1 text-sm text-ink outline-none placeholder:text-muted"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gold-deep">收到了。</p>
+          )}
+        </div>
+
+        {/* 第三级：一句话。默认折叠，不显示数量 */}
+        <div className="space-y-4">
+          {!echoesOpen ? (
+            <button
+              onClick={openEchoes}
+              className="flex items-center gap-2 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
+            >
+              <Waves strokeWidth={1.5} className="h-4 w-4" />
+              查看回响
+            </button>
+          ) : (
+            <div className="space-y-3">
+              {echoes.map((e) => (
+                <div key={e.id} className="glass p-4">
+                  <p className="text-ink">{e.content}</p>
+                </div>
+              ))}
+              <div className="glass flex items-center gap-3 p-2 pl-5">
+                <input
+                  value={echoInput}
+                  onChange={(e) => setEchoInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendEcho()}
+                  placeholder="你想对做这个梦的人说什么？"
+                  className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+                />
+                <button
+                  onClick={sendEcho}
+                  className="glass flex h-10 w-10 shrink-0 items-center justify-center !rounded-full transition-opacity duration-fade hover:opacity-70"
+                >
+                  <Send strokeWidth={1.5} className="h-4 w-4 text-gold" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <p className="pt-2 text-xs text-muted">
+          以下为文化视角参考，非心理诊断 ·{" "}
+          <Link href="/plaza" className="text-gold-deep">
+            投放回响
+          </Link>
+        </p>
+      </motion.div>
+
+      <BottomNav />
+    </main>
+  );
+}
