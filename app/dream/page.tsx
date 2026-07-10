@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { ChevronDown, Feather, RefreshCw, Waves } from "lucide-react";
 import Art from "@/components/Art";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 const tags = ["坠落", "水", "月", "独身"];
@@ -64,7 +64,7 @@ export default function DreamPage() {
         </div>
       </motion.div>
 
-      <TabBar active="record" />
+      <BottomNav />
     </main>
   );
 }

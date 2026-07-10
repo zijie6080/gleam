@@ -1,24 +1,30 @@
-import Link from "next/link";
-import { BookOpen, Orbit, Radar, User } from "lucide-react";
+"use client";
 
-const tabs = [
-  { key: "record", label: "记录", href: "/dream", Icon: BookOpen },
-  { key: "starmap", label: "星图", href: "/starmap", Icon: Orbit },
-  { key: "echo", label: "回响", href: "/plaza", Icon: Radar },
-  { key: "me", label: "我的", href: "#", Icon: User },
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Feather, Orbit, User, Waves } from "lucide-react";
+
+// 信息架构 v2：记录 / 共鸣 / 星图 / 我的
+// 回响广场已降级为二级页面，不在导航中
+const TABS = [
+  { href: "/capture", label: "记录", Icon: Feather },
+  { href: "/resonance", label: "共鸣", Icon: Waves },
+  { href: "/starmap", label: "星图", Icon: Orbit },
+  { href: "/profile", label: "我的", Icon: User },
 ] as const;
 
-export type TabKey = (typeof tabs)[number]["key"];
+export default function BottomNav() {
+  const pathname = usePathname();
 
-export default function TabBar({ active }: { active: TabKey }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-10 bg-gradient-to-t from-night-start to-transparent pb-6 pt-4">
       <div className="mx-auto flex max-w-md items-start justify-around">
-        {tabs.map(({ key, label, href, Icon }) => {
-          const isActive = key === active;
+        {TABS.map(({ href, label, Icon }) => {
+          const isActive =
+            pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link
-              key={key}
+              key={href}
               href={href}
               className={`flex flex-col items-center gap-1.5 transition-opacity duration-fade ${
                 isActive ? "text-gold" : "text-muted hover:opacity-70"

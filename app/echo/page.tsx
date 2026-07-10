@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { HeartHandshake, Send, Sprout } from "lucide-react";
 import Art from "@/components/Art";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 const replies = [
@@ -89,7 +89,7 @@ export default function EchoPage() {
         </div>
       </motion.section>
 
-      <TabBar active="echo" />
+      <BottomNav />
     </main>
   );
 }

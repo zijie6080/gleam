@@ -7,7 +7,7 @@ import StarCanvas, {
   constellations,
   focusStar,
 } from "@/components/StarCanvas";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 export default function StarmapPage() {
@@ -70,7 +70,7 @@ export default function StarmapPage() {
         <Minus strokeWidth={1.5} className="h-5 w-5" />
       </div>
 
-      <TabBar active="starmap" />
+      <BottomNav />
     </main>
   );
 }

@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import Art from "@/components/Art";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 // 4 行 × 6 列的匹配梦境球，第 16 个（第 3 行第 4 列）为高亮
@@ -58,7 +58,7 @@ export default function ResonancePage() {
         <p className="text-sm text-muted">48 小时后自动关闭</p>
       </motion.section>
 
-      <TabBar active="starmap" />
+      <BottomNav />
     </main>
   );
 }

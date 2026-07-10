@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Moon } from "lucide-react";
 import Art from "@/components/Art";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 export default function CapturePage() {
@@ -24,7 +24,7 @@ export default function CapturePage() {
         <p className="text-sm text-muted">松手结束 · 07:14</p>
       </motion.div>
 
-      <TabBar active="echo" />
+      <BottomNav />
     </main>
   );
 }

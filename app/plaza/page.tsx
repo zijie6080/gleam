@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Heart, Link2, MessageCircleQuestion, Sparkles } from "lucide-react";
 import Art from "@/components/Art";
-import TabBar from "@/components/TabBar";
+import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 
 const filters = [
@@ -133,7 +133,7 @@ export default function PlazaPage() {
         </motion.article>
       ))}
 
-      <TabBar active="echo" />
+      <BottomNav />
     </main>
   );
 }
