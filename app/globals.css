@@ -75,6 +75,34 @@ body {
   pointer-events: none;
 }
 
+/* ---- 插画占位（运行时 AI 生成图的容器） ----
+   三层处理保证任何色调的生成图都能融进界面：
+   1. mask 底部渐隐  2. 深色叠加  3. 降饱和 */
+
+.art-ph {
+  position: relative;
+  overflow: hidden;
+  /* 占位底色：仅用既有色值的 rgba 变体 */
+  background:
+    radial-gradient(
+      ellipse at 50% 30%,
+      rgba(232, 200, 138, 0.18) 0%,
+      rgba(30, 27, 58, 0.9) 55%,
+      rgba(11, 16, 38, 1) 100%
+    );
+  filter: saturate(0.85);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.art-ph::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 16, 38, 0.35);
+  pointer-events: none;
+}
+
 /* ---- 玻璃卡片 ---- */
 
 .glass {
