@@ -41,16 +41,14 @@ export default function ProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 账号
-  const [email, setEmail] = useState<string | null>(null);
-  const [phone, setPhone] = useState<string | null>(null);
+  const [accountLabel, setAccountLabel] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"phone" | "email">("phone");
+  const [authMode, setAuthMode] = useState<"user" | "email">("user");
   const [authEmail, setAuthEmail] = useState("");
+  const [authUser, setAuthUser] = useState("");
   const [authPass, setAuthPass] = useState("");
-  const [authPhone, setAuthPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
   const [authMsg, setAuthMsg] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
     const uid = anonUserId();
@@ -74,8 +72,13 @@ export default function ProfilePage() {
     supabaseBrowser()
       ?.auth.getUser()
       .then(({ data }) => {
-        setEmail(data.user?.email ?? null);
-        setPhone(data.user?.phone || null);
+        const u = data.user;
+        if (!u) return;
+        const username = u.user_metadata?.username as string | undefined;
+        const email = u.email?.endsWith("@users.gleam.internal")
+          ? null
+          : u.email;
+        setAccountLabel(username ?? email ?? null);
       });
   }, []);
 
@@ -123,42 +126,47 @@ export default function ProfilePage() {
     window.location.reload();
   }
 
-  // 手机号：把 13x… 规范成 +86 开头的 E.164
-  function normalizePhone(raw: string): string {
-    const digits = raw.replace(/[^\d+]/g, "");
-    if (digits.startsWith("+")) return digits;
-    if (/^1\d{10}$/.test(digits)) return `+86${digits}`;
-    return `+${digits}`;
-  }
-
-  async function sendOtp() {
+  // 用户名账号：注册走服务端（设备限一账号），登录直接用合成邮箱
+  async function userAuth(kind: "in" | "up") {
     const sb = supabaseBrowser();
     if (!sb) return setAuthMsg("登录服务未配置");
+    if (authBusy) return;
+    setAuthBusy(true);
     setAuthMsg(null);
-    const { error } = await sb.auth.signInWithOtp({
-      phone: normalizePhone(authPhone),
-    });
-    if (error) {
-      setAuthMsg(`发送失败：${error.message}`);
-      return;
+    try {
+      if (kind === "up") {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: authUser.trim(),
+            password: authPass,
+            deviceId: anonUserId(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setAuthMsg(data.error);
+          return;
+        }
+      }
+      const { usernameToEmail, USERNAME_RE } = await import("@/lib/account");
+      if (!USERNAME_RE.test(authUser.trim())) {
+        setAuthMsg("用户名需为 3–16 位字母、数字或下划线");
+        return;
+      }
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: usernameToEmail(authUser.trim()),
+        password: authPass,
+      });
+      if (error || !data.session) {
+        setAuthMsg(kind === "in" ? "用户名或密码不对" : error?.message ?? "登录失败");
+        return;
+      }
+      await afterAuth(data.session);
+    } finally {
+      setAuthBusy(false);
     }
-    setOtpSent(true);
-  }
-
-  async function verifyOtp() {
-    const sb = supabaseBrowser();
-    if (!sb) return;
-    setAuthMsg(null);
-    const { data, error } = await sb.auth.verifyOtp({
-      phone: normalizePhone(authPhone),
-      token: otp.trim(),
-      type: "sms",
-    });
-    if (error || !data.session) {
-      setAuthMsg(error?.message ?? "验证码不对，再试一次");
-      return;
-    }
-    await afterAuth(data.session);
   }
 
   async function signIn(kind: "in" | "up") {
@@ -265,7 +273,7 @@ export default function ProfilePage() {
             </button>
           )}
           <p className="mt-1 truncate text-sm text-muted">
-            {email ?? phone ?? "匿名 · 数据只在这台设备"}
+            {accountLabel ?? "匿名 · 数据只在这台设备"}
           </p>
           {profileMsg && (
             <p className="mt-1 text-xs text-gold-deep">{profileMsg}</p>
@@ -275,7 +283,7 @@ export default function ProfilePage() {
 
       {/* 账号 */}
       <motion.section {...fadeIn}>
-        {email ? (
+        {accountLabel ? (
           <button
             onClick={signOut}
             className="glass flex w-full items-center gap-3 p-5 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
@@ -289,15 +297,15 @@ export default function ProfilePage() {
             className="glass flex w-full items-center gap-3 p-5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
           >
             <LogIn strokeWidth={1.5} className="h-5 w-5 text-gold" />
-            绑定邮箱，换设备也能找回你的梦
+            注册账号，换设备也能找回你的梦
           </button>
         ) : (
           <div className="glass space-y-3 p-5">
-            {/* 手机号 / 邮箱 切换 */}
+            {/* 账号 / 邮箱 切换 */}
             <div className="flex gap-4 text-sm">
               {(
                 [
-                  ["phone", "手机号"],
+                  ["user", "账号密码"],
                   ["email", "邮箱"],
                 ] as const
               ).map(([mode, label]) => (
@@ -318,58 +326,41 @@ export default function ProfilePage() {
               ))}
             </div>
 
-            {authMode === "phone" ? (
+            {authMode === "user" ? (
               <>
                 <input
-                  type="tel"
-                  value={authPhone}
-                  onChange={(e) => setAuthPhone(e.target.value)}
-                  placeholder="手机号"
-                  disabled={otpSent}
-                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted disabled:opacity-50"
+                  value={authUser}
+                  onChange={(e) => setAuthUser(e.target.value.slice(0, 16))}
+                  placeholder="用户名（3–16 位字母数字下划线）"
+                  autoCapitalize="none"
+                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
                 />
-                {otpSent && (
-                  <input
-                    inputMode="numeric"
-                    value={otp}
-                    onChange={(e) =>
-                      setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    onKeyDown={(e) => e.key === "Enter" && verifyOtp()}
-                    placeholder="6 位验证码"
-                    autoFocus
-                    className="w-full border-b border-glass-border bg-transparent py-2 text-sm tracking-[0.3em] text-ink outline-none placeholder:tracking-normal placeholder:text-muted"
-                  />
-                )}
+                <input
+                  type="password"
+                  value={authPass}
+                  onChange={(e) => setAuthPass(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && userAuth("in")}
+                  placeholder="密码（至少 6 位）"
+                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
+                />
                 {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
-                {!otpSent ? (
+                <div className="flex gap-3 pt-1">
                   <button
-                    onClick={sendOtp}
-                    disabled={!authPhone.trim()}
-                    className="glass w-full !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-30"
+                    onClick={() => userAuth("in")}
+                    disabled={authBusy}
+                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-40"
                   >
-                    发送验证码
+                    登录
                   </button>
-                ) : (
-                  <div className="flex gap-3">
-                    <button
-                      onClick={verifyOtp}
-                      disabled={otp.length !== 6}
-                      className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-30"
-                    >
-                      验证并登录
-                    </button>
-                    <button
-                      onClick={() => {
-                        setOtpSent(false);
-                        setOtp("");
-                      }}
-                      className="glass flex-1 !rounded-2xl py-2.5 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
-                    >
-                      重新输入手机号
-                    </button>
-                  </div>
-                )}
+                  <button
+                    onClick={() => userAuth("up")}
+                    disabled={authBusy}
+                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70 disabled:opacity-40"
+                  >
+                    注册
+                  </button>
+                </div>
+                <p className="text-xs text-muted">一台设备只能注册一个账号</p>
               </>
             ) : (
               <>
