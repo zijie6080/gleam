@@ -1,37 +1,51 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Minus, Plus } from "lucide-react";
-import Art from "@/components/Art";
-import StarCanvas, {
-  constellations,
-  focusStar,
-} from "@/components/StarCanvas";
+import StarCanvas from "@/components/StarCanvas";
 import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
 
 const MIN_MY_DREAMS = 20; // 自己的梦不足 20 个时，「我的」视图不可用（新用户空屏问题）
 
+type MapData = {
+  points: {
+    id: string;
+    x: number;
+    y: number;
+    title: string;
+    date: string;
+    motif: string | null;
+  }[];
+  clusters: { name: string; x: number; y: number }[];
+};
+
 export default function StarmapPage() {
   const [zoom, setZoom] = useState(1);
   const [myDreams, setMyDreams] = useState(0);
-  const [totalDreams, setTotalDreams] = useState<number | null>(null);
   const [view, setView] = useState<"all" | "mine">("all"); // 默认全站
+  const [map, setMap] = useState<MapData>({ points: [], clusters: [] });
 
   useEffect(() => {
     fetch(`/api/stats?userId=${anonUserId()}`)
       .then((r) => r.json())
       .then((d) => setMyDreams(d.dreamCount ?? 0))
       .catch(() => {});
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then((d) => setTotalDreams(d.totalDreams ?? 0))
-      .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const q = view === "mine" ? `?userId=${anonUserId()}` : "";
+    fetch(`/api/starmap${q}`)
+      .then((r) => r.json())
+      .then((d) => setMap({ points: d.points ?? [], clusters: d.clusters ?? [] }))
+      .catch(() => {});
+  }, [view]);
+
   const myViewLocked = myDreams < MIN_MY_DREAMS;
+  const focus = map.points[0] ?? null; // API 按时间倒序，第一个是最近的梦
 
   return (
     <main className="relative mx-auto min-h-screen max-w-md overflow-hidden">
@@ -39,31 +53,36 @@ export default function StarmapPage() {
         className="absolute inset-0 bottom-28 transition-transform duration-fade"
         style={{ transform: `scale(${zoom})`, transformOrigin: "50% 45%" }}
       >
-        <StarCanvas />
+        <StarCanvas points={map.points} focus={focus} />
 
-        {constellations.map((c) => (
+        {/* 星座标签：由聚类质心计算，不再硬编码 */}
+        {map.clusters.map((c) => (
           <span
             key={c.name}
             className="absolute -translate-x-1/2 font-serif text-sm text-gold"
-            style={{ left: `${c.label.x * 100}%`, top: `${c.label.y * 100}%` }}
+            style={{ left: `${c.x * 100}%`, top: `${(c.y + 0.05) * 100}%` }}
           >
             {c.name}
           </span>
         ))}
 
-        <motion.div
-          {...fadeIn}
-          className="glass absolute flex items-center gap-3 p-3 pr-5"
-          style={{
-            left: `${(focusStar.x + 0.07) * 100}%`,
-            top: `${(focusStar.y + 0.02) * 100}%`,
-          }}
-        >
-          <Art className="h-12 w-12 shrink-0 rounded-lg" />
-          <span className="whitespace-nowrap text-sm text-ink">
-            坠入无声的海 · 7月8日
-          </span>
-        </motion.div>
+        {/* 最近的梦 tooltip，可点进详情 */}
+        {focus && (
+          <motion.div {...fadeIn}>
+            <Link
+              href={`/dream/${focus.id}`}
+              className="glass absolute flex items-center gap-2 px-4 py-2 transition-opacity duration-fade hover:opacity-70"
+              style={{
+                left: `${Math.min(focus.x + 0.06, 0.55) * 100}%`,
+                top: `${Math.min(focus.y + 0.03, 0.85) * 100}%`,
+              }}
+            >
+              <span className="whitespace-nowrap text-sm text-ink">
+                {focus.title} · {focus.date}
+              </span>
+            </Link>
+          </motion.div>
+        )}
       </div>
 
       <motion.header
@@ -73,7 +92,7 @@ export default function StarmapPage() {
         <h1 className="font-serif text-2xl text-ink">
           {view === "all" ? "全站星图" : "我的星图"}
           <span className="ml-2 font-sans text-sm text-muted">
-            {totalDreams !== null && `· 共 ${totalDreams} 个梦`}
+            · 共 {map.points.length} 个梦
           </span>
         </h1>
         <div className="glass flex !rounded-full p-1 text-sm">

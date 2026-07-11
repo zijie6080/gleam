@@ -1,6 +1,7 @@
 import { Moon } from "lucide-react";
 import Art from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
+import OpenChatButton from "@/components/OpenChatButton";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -100,9 +101,7 @@ export default async function ResonancePage() {
       </section>
 
       <section className="mt-auto space-y-4 pt-16 text-center">
-        <button className="glass w-full !border-gold-deep py-4 font-serif text-lg text-gold transition-opacity duration-fade hover:opacity-70">
-          开启 48 小时匿名对话
-        </button>
+        <OpenChatButton />
         <p className="text-sm text-muted">双方都同意才会开启 · 48 小时后自动关闭</p>
       </section>
 

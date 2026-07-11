@@ -3,7 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ChevronDown, HeartHandshake, LifeBuoy, Send, Star, Waves } from "lucide-react";
+import {
+  ChevronDown,
+  Feather,
+  HeartHandshake,
+  LifeBuoy,
+  RefreshCw,
+  Send,
+  Star,
+  Waves,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import DreamImage from "@/components/DreamImage";
 import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
@@ -29,7 +39,12 @@ function emotionLabel(score: number | null) {
 }
 
 export default function DreamView({ dream }: { dream: DreamData }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
+  const [story, setStory] = useState<string | null>(null);
+  const [storyLoading, setStoryLoading] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [published, setPublished] = useState(false);
   const [iamtooCount, setIamtooCount] = useState(0);
   const [iamtooDone, setIamtooDone] = useState(false);
   const [wordSent, setWordSent] = useState(false);
@@ -110,6 +125,44 @@ export default function DreamView({ dream }: { dream: DreamData }) {
       const { echo } = await res.json();
       setEchoes((prev) => [...prev, echo]);
     }
+  }
+
+  // 已有故事则带出
+  useEffect(() => {
+    if (dream.is_night_mode) return;
+    fetch(`/api/dreams/${dream.id}/story`)
+      .then((r) => r.json())
+      .then((d) => setStory(d.story?.content ?? null))
+      .catch(() => {});
+  }, [dream.id, dream.is_night_mode]);
+
+  async function generateStory() {
+    if (storyLoading) return;
+    setStoryLoading(true);
+    const res = await fetch(`/api/dreams/${dream.id}/story`, {
+      method: "POST",
+    }).catch(() => null);
+    if (res?.ok) setStory((await res.json()).story.content);
+    setStoryLoading(false);
+  }
+
+  async function reprocess() {
+    if (reprocessing) return;
+    setReprocessing(true);
+    await fetch(`/api/dreams/${dream.id}/reprocess`, { method: "POST" }).catch(
+      () => {},
+    );
+    setReprocessing(false);
+    router.refresh();
+  }
+
+  async function publish() {
+    const res = await fetch(`/api/dreams/${dream.id}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: anonUserId() }),
+    }).catch(() => null);
+    if (res?.ok) setPublished(true);
   }
 
   // 深夜模式：不解读、不生成、不推送。产品让路。
@@ -207,6 +260,60 @@ export default function DreamView({ dream }: { dream: DreamData }) {
             展开全文
             <ChevronDown strokeWidth={1.5} className="h-4 w-4" />
           </button>
+        )}
+
+        {/* 三个动作：再生成 / 续写故事 / 投放回响（显式发布） */}
+        <div className="flex justify-between pt-4">
+          {[
+            {
+              label: reprocessing ? "重新提取中…" : "再生成",
+              Icon: RefreshCw,
+              onClick: reprocess,
+              done: false,
+            },
+            {
+              label: storyLoading ? "书写中…" : "续写故事",
+              Icon: Feather,
+              onClick: generateStory,
+              done: false,
+            },
+            {
+              label: published ? "已投放" : "投放回响",
+              Icon: Waves,
+              onClick: publish,
+              done: published,
+            },
+          ].map(({ label, Icon, onClick, done }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className="flex flex-col items-center gap-3 transition-opacity duration-fade hover:opacity-70"
+            >
+              <span
+                className={`glass flex h-16 w-16 items-center justify-center !rounded-full ${
+                  done ? "!border-gold" : ""
+                }`}
+              >
+                <Icon strokeWidth={1.5} className="h-5 w-5 text-gold" />
+              </span>
+              <span className="text-xs text-ink">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* 续写的故事 */}
+        {story && (
+          <div className="glass space-y-3 p-5">
+            <p className="flex items-center gap-2 text-sm text-gold">
+              <Feather strokeWidth={1.5} className="h-4 w-4" />
+              续写的故事
+            </p>
+            <div className="space-y-2 text-sm leading-relaxed text-ink">
+              {story.split("\n").filter(Boolean).map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* 意象考古 */}
