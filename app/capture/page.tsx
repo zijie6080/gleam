@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Moon, Send } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import HeartbeatBanner from "@/components/HeartbeatBanner";
 import VoiceRing from "@/components/VoiceRing";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
@@ -122,6 +123,9 @@ export default function CapturePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-32 pt-14">
       <Moon strokeWidth={1.5} className="h-7 w-7 text-gold" />
+      <div className="pt-4">
+        <HeartbeatBanner />
+      </div>
 
       <motion.div
         {...fadeIn}

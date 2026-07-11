@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+/* eslint-disable @next/next/no-img-element */
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Download, HeartHandshake, Trash2 } from "lucide-react";
+import {
+  Check,
+  Download,
+  HeartHandshake,
+  LogIn,
+  LogOut,
+  Pencil,
+  Trash2,
+  User,
+} from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 const heatClasses = [
   "bg-glass",
@@ -21,8 +32,24 @@ export default function ProfilePage() {
   const [days, setDays] = useState<number[]>(Array(35).fill(0));
   const [deleting, setDeleting] = useState(false);
 
+  // 资料
+  const [nickname, setNickname] = useState("梦游者");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // 账号
+  const [email, setEmail] = useState<string | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authMsg, setAuthMsg] = useState<string | null>(null);
+
   useEffect(() => {
-    fetch(`/api/stats?userId=${anonUserId()}`)
+    const uid = anonUserId();
+    fetch(`/api/stats?userId=${uid}`)
       .then((r) => r.json())
       .then((d) => {
         setStats({
@@ -32,10 +59,82 @@ export default function ProfilePage() {
         if (Array.isArray(d.days)) setDays(d.days);
       })
       .catch(() => {});
+    fetch(`/api/profile?userId=${uid}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setNickname(d.nickname ?? "梦游者");
+        setAvatarUrl(d.avatarUrl ?? null);
+      })
+      .catch(() => {});
+    supabaseBrowser()
+      ?.auth.getUser()
+      .then(({ data }) => setEmail(data.user?.email ?? null));
   }, []);
 
-  function exportData() {
-    window.location.href = `/api/export?userId=${anonUserId()}`;
+  async function saveProfile(form: FormData) {
+    form.append("userId", anonUserId());
+    const res = await fetch("/api/profile", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      setProfileMsg(data.error);
+      return;
+    }
+    setProfileMsg(null);
+    setNickname(data.nickname);
+    if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+  }
+
+  async function saveName() {
+    const form = new FormData();
+    form.append("nickname", nameInput);
+    await saveProfile(form);
+    setEditingName(false);
+  }
+
+  async function onAvatarPick(file: File | undefined) {
+    if (!file) return;
+    const form = new FormData();
+    form.append("avatar", file);
+    await saveProfile(form);
+  }
+
+  async function signIn(kind: "in" | "up") {
+    const sb = supabaseBrowser();
+    if (!sb) {
+      setAuthMsg("登录服务未配置");
+      return;
+    }
+    setAuthMsg(null);
+    const fn =
+      kind === "in"
+        ? sb.auth.signInWithPassword({ email: authEmail, password: authPass })
+        : sb.auth.signUp({ email: authEmail, password: authPass });
+    const { data, error } = await fn;
+    if (error) {
+      setAuthMsg(error.message);
+      return;
+    }
+    if (!data.session) {
+      setAuthMsg("注册成功，请去邮箱点确认链接后再登录。");
+      return;
+    }
+    // 迁移旧匿名数据 → 账号
+    const old = localStorage.getItem("gleam_anon_id");
+    if (old && old !== data.session.user.id) {
+      await fetch("/api/account/migrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: old, token: data.session.access_token }),
+      }).catch(() => {});
+    }
+    localStorage.setItem("gleam_anon_id", data.session.user.id);
+    window.location.reload();
+  }
+
+  async function signOut() {
+    await supabaseBrowser()?.auth.signOut();
+    localStorage.removeItem("gleam_anon_id");
+    window.location.reload();
   }
 
   async function deleteAccount() {
@@ -50,6 +149,7 @@ export default function ProfilePage() {
       method: "DELETE",
     }).catch(() => null);
     if (res?.ok) {
+      await supabaseBrowser()?.auth.signOut();
       localStorage.removeItem("gleam_anon_id");
       localStorage.removeItem("gleam_draft");
       router.push("/capture");
@@ -60,10 +160,118 @@ export default function ProfilePage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-md space-y-8 px-6 pb-32 pt-14">
-      <motion.header {...fadeIn}>
-        <h1 className="font-serif text-4xl text-ink">我的</h1>
-        <p className="mt-2 text-sm text-muted">匿名 · 梦游者</p>
+      {/* 头像 + 昵称 */}
+      <motion.header {...fadeIn} className="flex items-center gap-5">
+        <button
+          onClick={() => fileRef.current?.click()}
+          aria-label="更换头像"
+          className="glass flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden !rounded-full transition-opacity duration-fade hover:opacity-70"
+        >
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              style={{ filter: "saturate(0.85)" }}
+            />
+          ) : (
+            <User strokeWidth={1.5} className="h-8 w-8 text-muted" />
+          )}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => onAvatarPick(e.target.files?.[0])}
+        />
+        <div className="min-w-0">
+          {editingName ? (
+            <span className="flex items-center gap-2">
+              <input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value.slice(0, 12))}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                autoFocus
+                className="w-36 border-b border-gold-deep bg-transparent font-serif text-2xl text-ink outline-none"
+              />
+              <button onClick={saveName} aria-label="保存昵称">
+                <Check strokeWidth={1.5} className="h-5 w-5 text-gold" />
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                setNameInput(nickname);
+                setEditingName(true);
+              }}
+              className="flex items-center gap-2 transition-opacity duration-fade hover:opacity-70"
+            >
+              <span className="font-serif text-3xl text-ink">{nickname}</span>
+              <Pencil strokeWidth={1.5} className="h-4 w-4 text-muted" />
+            </button>
+          )}
+          <p className="mt-1 truncate text-sm text-muted">
+            {email ?? "匿名 · 数据只在这台设备"}
+          </p>
+          {profileMsg && (
+            <p className="mt-1 text-xs text-gold-deep">{profileMsg}</p>
+          )}
+        </div>
       </motion.header>
+
+      {/* 账号 */}
+      <motion.section {...fadeIn}>
+        {email ? (
+          <button
+            onClick={signOut}
+            className="glass flex w-full items-center gap-3 p-5 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
+          >
+            <LogOut strokeWidth={1.5} className="h-5 w-5" />
+            退出登录
+          </button>
+        ) : !authOpen ? (
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="glass flex w-full items-center gap-3 p-5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
+          >
+            <LogIn strokeWidth={1.5} className="h-5 w-5 text-gold" />
+            绑定邮箱，换设备也能找回你的梦
+          </button>
+        ) : (
+          <div className="glass space-y-3 p-5">
+            <input
+              type="email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              placeholder="邮箱"
+              className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
+            />
+            <input
+              type="password"
+              value={authPass}
+              onChange={(e) => setAuthPass(e.target.value)}
+              placeholder="密码（至少 6 位）"
+              className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
+            />
+            {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => signIn("in")}
+                className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70"
+              >
+                登录
+              </button>
+              <button
+                onClick={() => signIn("up")}
+                className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
+              >
+                注册
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.section>
 
       <motion.section {...fadeIn} className="grid grid-cols-2 gap-4">
         <div className="glass p-6">
@@ -98,7 +306,9 @@ export default function ProfilePage() {
 
       <motion.section {...fadeIn} className="space-y-3">
         <button
-          onClick={exportData}
+          onClick={() =>
+            (window.location.href = `/api/export?userId=${anonUserId()}`)
+          }
           className="glass flex w-full items-center gap-3 p-5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
         >
           <Download strokeWidth={1.5} className="h-5 w-5 text-gold" />

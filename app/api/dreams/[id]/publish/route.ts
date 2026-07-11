@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
 
 // 「投放回响」：显式发布到广场（默认私有是底线，发布必须显式操作）
 export async function POST(
@@ -12,7 +13,7 @@ export async function POST(
     const db = supabaseAdmin();
     const { data: dream, error } = await db
       .from("dreams")
-      .select("user_id, is_night_mode")
+      .select("user_id, is_night_mode, raw_text")
       .eq("id", id)
       .single();
     if (error) {
@@ -25,6 +26,10 @@ export async function POST(
     // 深夜模式的梦不推送到广场
     if (dream.is_night_mode) {
       return NextResponse.json({ error: "night mode" }, { status: 409 });
+    }
+    // 公开前过一道机审
+    if (!moderate(dream.raw_text).ok) {
+      return NextResponse.json({ error: MODERATION_MESSAGE }, { status: 422 });
     }
 
     const { error: uErr } = await db

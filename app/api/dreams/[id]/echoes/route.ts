@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
 
 // 第三级回响：一句话（v2 §3.3）。
 // 列表不返回数量统计口径之外的任何身份信息；前端默认折叠、不显示数量。
@@ -33,6 +34,9 @@ export async function POST(
   const content = typeof body.content === "string" ? body.content.trim() : "";
   if (!content) {
     return NextResponse.json({ error: "content is required" }, { status: 400 });
+  }
+  if (!moderate(content).ok) {
+    return NextResponse.json({ error: MODERATION_MESSAGE }, { status: 422 });
   }
   try {
     const db = supabaseAdmin();

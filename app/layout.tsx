@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Serif_SC, Noto_Sans_SC } from "next/font/google";
+import AuthBootstrap from "@/components/AuthBootstrap";
 import "./globals.css";
 
 const notoSerif = Noto_Serif_SC({
@@ -27,6 +28,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={`${notoSerif.variable} ${notoSans.variable}`}>
+        <AuthBootstrap />
         <div className="bg-stage">{children}</div>
       </body>
     </html>

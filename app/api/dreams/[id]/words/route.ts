@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
 
 // 第二级回响：一个词（v2 §3.2）。
 // 梦主收到的是聚合的情绪云图，不是一条条评论。user_id 永不返回。
@@ -51,6 +52,9 @@ export async function POST(
       { error: "word must be 1-4 characters" },
       { status: 400 },
     );
+  }
+  if (!moderate(word).ok) {
+    return NextResponse.json({ error: MODERATION_MESSAGE }, { status: 422 });
   }
   try {
     const db = supabaseAdmin();

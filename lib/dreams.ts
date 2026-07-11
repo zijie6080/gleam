@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { extractMotifs, type ExtractedMotif } from "@/lib/deepseek";
 import { embed } from "@/lib/embedding";
 import { detectCrisis, isNightMode } from "@/lib/night";
+import { MATCH_THRESHOLD } from "@/lib/match";
 
 export type CreateDreamInput = {
   text: string;
@@ -83,6 +84,38 @@ export async function createDream(input: CreateDreamInput) {
         .update({ embedding: JSON.stringify(vector) })
         .eq("id", dream.id);
       if (embErr) throw new Error(embErr.message);
+
+      // 心跳通知：这个新梦命中了谁，就告诉谁（每人一条未读，不叠加）
+      if (input.userId) {
+        const { data: matches } = await db.rpc("recent_similar_dreams", {
+          query_embedding: JSON.stringify(vector),
+          self_dream: dream.id,
+          self_user: input.userId,
+          min_similarity: MATCH_THRESHOLD,
+        });
+        const users = [
+          ...new Set(
+            ((matches ?? []) as { user_id: string }[]).map((m) => m.user_id),
+          ),
+        ];
+        for (const uid of users) {
+          const { data: existing } = await db
+            .from("notifications")
+            .select("id")
+            .eq("user_id", uid)
+            .eq("type", "resonance")
+            .eq("read", false)
+            .limit(1)
+            .maybeSingle();
+          if (!existing) {
+            await db.from("notifications").insert({
+              user_id: uid,
+              type: "resonance",
+              payload: {},
+            });
+          }
+        }
+      }
     } catch (e) {
       warnings.push(`embedding failed: ${(e as Error).message}`);
     }

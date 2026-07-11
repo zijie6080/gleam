@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { MATCH_THRESHOLD } from "@/lib/match";
 
-// 产品心跳（v2 §6.2）：24 小时内相似度 > 0.85 的梦有多少个。
+// 产品心跳（v2 §6.2）：24 小时内相似度超过阈值的梦有多少个。
 // count 为 0 时前端不展示（不推送"有 0 个人"）。
 export async function GET(
   _req: NextRequest,
@@ -25,7 +26,7 @@ export async function GET(
       {
         query_embedding: dream.embedding,
         self_dream: id,
-        min_similarity: 0.85,
+        min_similarity: MATCH_THRESHOLD,
       },
     );
     if (rpcErr) throw new Error(rpcErr.message);

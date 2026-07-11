@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
 
 // 会话读写。仅参与者可访问；到期即关闭并抹除消息（不留痕）。
 // 任何响应不含对方 user_id。
@@ -82,6 +83,9 @@ export async function POST(
     typeof body.content === "string" ? body.content.trim().slice(0, 500) : "";
   if (!content) {
     return NextResponse.json({ error: "content is required" }, { status: 400 });
+  }
+  if (!moderate(content).ok) {
+    return NextResponse.json({ error: MODERATION_MESSAGE }, { status: 422 });
   }
 
   const res = await loadConv(id, userId);

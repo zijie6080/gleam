@@ -3,6 +3,7 @@ import Art from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
 import OpenChatButton from "@/components/OpenChatButton";
 import { supabaseAdmin } from "@/lib/supabase";
+import { MATCH_THRESHOLD } from "@/lib/match";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function ResonancePage() {
     const { data: c } = await db.rpc("count_recent_similar", {
       query_embedding: latest.embedding,
       self_dream: latest.id,
-      min_similarity: 0.85,
+      min_similarity: MATCH_THRESHOLD,
     });
     count = c ?? 0;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { MATCH_THRESHOLD } from "@/lib/match";
 
 // 48h 匿名对话（v2 §6.4）。
 // 只能由系统发起：入口是"系统检测到的高相似匹配"，用户不能挑人搭话。
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
       query_embedding: mine.embedding,
       match_count: 5,
       exclude_user: userId,
-      min_similarity: 0.85,
+      min_similarity: MATCH_THRESHOLD,
     });
     if (mErr) throw new Error(mErr.message);
     const partner = (matches ?? []).find(
