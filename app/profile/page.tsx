@@ -42,9 +42,14 @@ export default function ProfilePage() {
 
   // 账号
   const [email, setEmail] = useState<string | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"phone" | "email">("phone");
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [authMsg, setAuthMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,7 +73,10 @@ export default function ProfilePage() {
       .catch(() => {});
     supabaseBrowser()
       ?.auth.getUser()
-      .then(({ data }) => setEmail(data.user?.email ?? null));
+      .then(({ data }) => {
+        setEmail(data.user?.email ?? null);
+        setPhone(data.user?.phone || null);
+      });
   }, []);
 
   async function saveProfile(form: FormData) {
@@ -98,6 +106,61 @@ export default function ProfilePage() {
     await saveProfile(form);
   }
 
+  // 登录成功后的统一收尾：迁移旧匿名数据 → 刷新
+  async function afterAuth(session: {
+    user: { id: string };
+    access_token: string;
+  }) {
+    const old = localStorage.getItem("gleam_anon_id");
+    if (old && old !== session.user.id) {
+      await fetch("/api/account/migrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: old, token: session.access_token }),
+      }).catch(() => {});
+    }
+    localStorage.setItem("gleam_anon_id", session.user.id);
+    window.location.reload();
+  }
+
+  // 手机号：把 13x… 规范成 +86 开头的 E.164
+  function normalizePhone(raw: string): string {
+    const digits = raw.replace(/[^\d+]/g, "");
+    if (digits.startsWith("+")) return digits;
+    if (/^1\d{10}$/.test(digits)) return `+86${digits}`;
+    return `+${digits}`;
+  }
+
+  async function sendOtp() {
+    const sb = supabaseBrowser();
+    if (!sb) return setAuthMsg("登录服务未配置");
+    setAuthMsg(null);
+    const { error } = await sb.auth.signInWithOtp({
+      phone: normalizePhone(authPhone),
+    });
+    if (error) {
+      setAuthMsg(`发送失败：${error.message}`);
+      return;
+    }
+    setOtpSent(true);
+  }
+
+  async function verifyOtp() {
+    const sb = supabaseBrowser();
+    if (!sb) return;
+    setAuthMsg(null);
+    const { data, error } = await sb.auth.verifyOtp({
+      phone: normalizePhone(authPhone),
+      token: otp.trim(),
+      type: "sms",
+    });
+    if (error || !data.session) {
+      setAuthMsg(error?.message ?? "验证码不对，再试一次");
+      return;
+    }
+    await afterAuth(data.session);
+  }
+
   async function signIn(kind: "in" | "up") {
     const sb = supabaseBrowser();
     if (!sb) {
@@ -118,17 +181,7 @@ export default function ProfilePage() {
       setAuthMsg("注册成功，请去邮箱点确认链接后再登录。");
       return;
     }
-    // 迁移旧匿名数据 → 账号
-    const old = localStorage.getItem("gleam_anon_id");
-    if (old && old !== data.session.user.id) {
-      await fetch("/api/account/migrate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from: old, token: data.session.access_token }),
-      }).catch(() => {});
-    }
-    localStorage.setItem("gleam_anon_id", data.session.user.id);
-    window.location.reload();
+    await afterAuth(data.session);
   }
 
   async function signOut() {
@@ -212,7 +265,7 @@ export default function ProfilePage() {
             </button>
           )}
           <p className="mt-1 truncate text-sm text-muted">
-            {email ?? "匿名 · 数据只在这台设备"}
+            {email ?? phone ?? "匿名 · 数据只在这台设备"}
           </p>
           {profileMsg && (
             <p className="mt-1 text-xs text-gold-deep">{profileMsg}</p>
@@ -240,35 +293,117 @@ export default function ProfilePage() {
           </button>
         ) : (
           <div className="glass space-y-3 p-5">
-            <input
-              type="email"
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              placeholder="邮箱"
-              className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-            />
-            <input
-              type="password"
-              value={authPass}
-              onChange={(e) => setAuthPass(e.target.value)}
-              placeholder="密码（至少 6 位）"
-              className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-            />
-            {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => signIn("in")}
-                className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70"
-              >
-                登录
-              </button>
-              <button
-                onClick={() => signIn("up")}
-                className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
-              >
-                注册
-              </button>
+            {/* 手机号 / 邮箱 切换 */}
+            <div className="flex gap-4 text-sm">
+              {(
+                [
+                  ["phone", "手机号"],
+                  ["email", "邮箱"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    setAuthMode(mode);
+                    setAuthMsg(null);
+                  }}
+                  className={
+                    authMode === mode
+                      ? "border-b border-gold pb-1 text-gold"
+                      : "pb-1 text-muted transition-opacity duration-fade hover:opacity-70"
+                  }
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+
+            {authMode === "phone" ? (
+              <>
+                <input
+                  type="tel"
+                  value={authPhone}
+                  onChange={(e) => setAuthPhone(e.target.value)}
+                  placeholder="手机号"
+                  disabled={otpSent}
+                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted disabled:opacity-50"
+                />
+                {otpSent && (
+                  <input
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={(e) =>
+                      setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    onKeyDown={(e) => e.key === "Enter" && verifyOtp()}
+                    placeholder="6 位验证码"
+                    autoFocus
+                    className="w-full border-b border-glass-border bg-transparent py-2 text-sm tracking-[0.3em] text-ink outline-none placeholder:tracking-normal placeholder:text-muted"
+                  />
+                )}
+                {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
+                {!otpSent ? (
+                  <button
+                    onClick={sendOtp}
+                    disabled={!authPhone.trim()}
+                    className="glass w-full !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-30"
+                  >
+                    发送验证码
+                  </button>
+                ) : (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={verifyOtp}
+                      disabled={otp.length !== 6}
+                      className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-30"
+                    >
+                      验证并登录
+                    </button>
+                    <button
+                      onClick={() => {
+                        setOtpSent(false);
+                        setOtp("");
+                      }}
+                      className="glass flex-1 !rounded-2xl py-2.5 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
+                    >
+                      重新输入手机号
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="邮箱"
+                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
+                />
+                <input
+                  type="password"
+                  value={authPass}
+                  onChange={(e) => setAuthPass(e.target.value)}
+                  placeholder="密码（至少 6 位）"
+                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
+                />
+                {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => signIn("in")}
+                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70"
+                  >
+                    登录
+                  </button>
+                  <button
+                    onClick={() => signIn("up")}
+                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
+                  >
+                    注册
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </motion.section>
