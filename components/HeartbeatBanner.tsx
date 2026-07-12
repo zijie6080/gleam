@@ -37,7 +37,7 @@ export default function HeartbeatBanner() {
   return (
     <motion.div {...fadeIn} className="glass mb-6 flex items-center gap-3 p-4">
       <Link
-        href="/resonance"
+        href="/plaza"
         onClick={dismiss}
         className="flex-1 font-serif text-ink transition-opacity duration-fade hover:opacity-70"
       >

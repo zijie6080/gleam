@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { Feather, Orbit, User, Waves } from "lucide-react";
 
 // 信息架构 v2：记录 / 共鸣 / 星图 / 我的
-// 回响广场已降级为二级页面，不在导航中
+// 共鸣 = 共鸣广场（公开梦境信息流）
 const TABS = [
   { href: "/capture", label: "记录", Icon: Feather },
-  { href: "/resonance", label: "共鸣", Icon: Waves },
+  { href: "/plaza", label: "共鸣", Icon: Waves },
   { href: "/starmap", label: "星图", Icon: Orbit },
   { href: "/profile", label: "我的", Icon: User },
 ] as const;

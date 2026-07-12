@@ -9,7 +9,6 @@ import {
   HeartHandshake,
   LifeBuoy,
   RefreshCw,
-  Send,
   Star,
   Waves,
 } from "lucide-react";
@@ -51,9 +50,6 @@ export default function DreamView({ dream }: { dream: DreamData }) {
   const [customWord, setCustomWord] = useState("");
   const [wordCloud, setWordCloud] = useState<{ word: string; count: number }[]>([]);
   const [wordTotal, setWordTotal] = useState(0);
-  const [echoesOpen, setEchoesOpen] = useState(false);
-  const [echoes, setEchoes] = useState<{ id: string; content: string }[]>([]);
-  const [echoInput, setEchoInput] = useState("");
   const [resonance, setResonance] = useState<{ count: number; motif: string | null } | null>(null);
   const [findings, setFindings] = useState<{ message: string }[]>([]);
 
@@ -104,27 +100,6 @@ export default function DreamView({ dream }: { dream: DreamData }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: anonUserId(), word: word.trim() }),
     }).catch(() => {});
-  }
-
-  async function openEchoes() {
-    setEchoesOpen(true);
-    const res = await fetch(`/api/dreams/${dream.id}/echoes`).catch(() => null);
-    if (res?.ok) setEchoes((await res.json()).echoes ?? []);
-  }
-
-  async function sendEcho() {
-    const content = echoInput.trim();
-    if (!content) return;
-    setEchoInput("");
-    const res = await fetch(`/api/dreams/${dream.id}/echoes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: anonUserId(), content }),
-    }).catch(() => null);
-    if (res?.ok) {
-      const { echo } = await res.json();
-      setEchoes((prev) => [...prev, echo]);
-    }
   }
 
   // 已有故事则带出
@@ -395,46 +370,10 @@ export default function DreamView({ dream }: { dream: DreamData }) {
           )}
         </div>
 
-        {/* 第三级：一句话。默认折叠，不显示数量 */}
-        <div className="space-y-4">
-          {!echoesOpen ? (
-            <button
-              onClick={openEchoes}
-              className="flex items-center gap-2 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
-            >
-              <Waves strokeWidth={1.5} className="h-4 w-4" />
-              查看回响
-            </button>
-          ) : (
-            <div className="space-y-3">
-              {echoes.map((e) => (
-                <div key={e.id} className="glass p-4">
-                  <p className="text-ink">{e.content}</p>
-                </div>
-              ))}
-              <div className="glass flex items-center gap-3 p-2 pl-5">
-                <input
-                  value={echoInput}
-                  onChange={(e) => setEchoInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendEcho()}
-                  placeholder="你想对做这个梦的人说什么？"
-                  className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
-                />
-                <button
-                  onClick={sendEcho}
-                  className="glass flex h-10 w-10 shrink-0 items-center justify-center !rounded-full transition-opacity duration-fade hover:opacity-70"
-                >
-                  <Send strokeWidth={1.5} className="h-4 w-4 text-gold" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         <p className="pt-2 text-xs text-muted">
           以下为文化视角参考，非心理诊断 ·{" "}
           <Link href="/plaza" className="text-gold-deep">
-            投放回响
+            去共鸣广场
           </Link>
         </p>
       </motion.div>

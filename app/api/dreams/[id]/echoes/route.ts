@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
 
-// 第三级回响：一句话（v2 §3.3）。
-// 列表不返回数量统计口径之外的任何身份信息；前端默认折叠、不显示数量。
+// 广场评论。评论者显示昵称+头像（有温度），但梦的发布者仍匿名。
+// 响应中不含评论者的 user_id 本身，只带展示用的昵称/头像。
 
 export async function GET(
   _req: NextRequest,
@@ -14,11 +14,40 @@ export async function GET(
     const db = supabaseAdmin();
     const { data, error } = await db
       .from("echoes")
-      .select("id, content, is_touched, created_at")
+      .select("id, content, user_id, created_at")
       .eq("dream_id", id)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    return NextResponse.json({ echoes: data });
+
+    // 批量取评论者资料
+    const userIds = [
+      ...new Set((data ?? []).map((e) => e.user_id).filter(Boolean)),
+    ] as string[];
+    const profileMap = new Map<string, { nickname: string; avatarUrl: string | null }>();
+    if (userIds.length > 0) {
+      const { data: profiles } = await db
+        .from("profiles")
+        .select("id, nickname, avatar_url")
+        .in("id", userIds);
+      for (const p of profiles ?? []) {
+        profileMap.set(p.id, {
+          nickname: p.nickname ?? "梦游者",
+          avatarUrl: p.avatar_url ?? null,
+        });
+      }
+    }
+
+    const echoes = (data ?? []).map((e) => {
+      const prof = e.user_id ? profileMap.get(e.user_id) : null;
+      return {
+        id: e.id,
+        content: e.content,
+        created_at: e.created_at,
+        nickname: prof?.nickname ?? "梦游者",
+        avatarUrl: prof?.avatarUrl ?? null,
+      };
+    });
+    return NextResponse.json({ echoes });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
