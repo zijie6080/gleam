@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
-import { Send, User } from "lucide-react";
+import { Send, Sparkles, User } from "lucide-react";
 import { anonUserId } from "@/lib/user";
 
 type Comment = {
@@ -10,6 +10,7 @@ type Comment = {
   content: string;
   nickname: string;
   avatarUrl: string | null;
+  isAi?: boolean;
   created_at: string;
 };
 
@@ -59,26 +60,38 @@ export default function CommentSection({ dreamId }: { dreamId: string }) {
         {comments.length === 0 && (
           <p className="text-sm text-muted">还没有人回响。你想对做这个梦的人说什么？</p>
         )}
-        {comments.map((c) => (
-          <div key={c.id} className="flex gap-3">
-            <span className="glass flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden !rounded-full">
-              {c.avatarUrl ? (
-                <img
-                  src={c.avatarUrl}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  style={{ filter: "saturate(0.85)" }}
-                />
-              ) : (
-                <User strokeWidth={1.5} className="h-4 w-4 text-muted" />
-              )}
-            </span>
-            <div className="space-y-1">
-              <p className="text-xs text-muted">{c.nickname}</p>
+        {comments.map((c) =>
+          c.isAi ? (
+            // AI 基线解读：回响不落空的兜底，样式与人类评论区分
+            <div key={c.id} className="glass space-y-2 p-4">
+              <p className="flex items-center gap-2 text-xs text-gold">
+                <Sparkles strokeWidth={1.5} className="h-3.5 w-3.5" />
+                AI 意象拆解
+                <span className="text-muted">· 文化视角参考，非心理诊断</span>
+              </p>
               <p className="text-sm leading-relaxed text-ink">{c.content}</p>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div key={c.id} className="flex gap-3">
+              <span className="glass flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden !rounded-full">
+                {c.avatarUrl ? (
+                  <img
+                    src={c.avatarUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    style={{ filter: "saturate(0.85)" }}
+                  />
+                ) : (
+                  <User strokeWidth={1.5} className="h-4 w-4 text-muted" />
+                )}
+              </span>
+              <div className="space-y-1">
+                <p className="text-xs text-muted">{c.nickname}</p>
+                <p className="text-sm leading-relaxed text-ink">{c.content}</p>
+              </div>
+            </div>
+          ),
+        )}
       </div>
 
       <div className="glass flex items-center gap-3 p-2 pl-5">

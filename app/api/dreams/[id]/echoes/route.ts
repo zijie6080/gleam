@@ -14,7 +14,7 @@ export async function GET(
     const db = supabaseAdmin();
     const { data, error } = await db
       .from("echoes")
-      .select("id, content, user_id, created_at")
+      .select("id, content, user_id, is_ai, created_at")
       .eq("dream_id", id)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
@@ -43,7 +43,8 @@ export async function GET(
         id: e.id,
         content: e.content,
         created_at: e.created_at,
-        nickname: prof?.nickname ?? "梦游者",
+        isAi: Boolean(e.is_ai),
+        nickname: e.is_ai ? "AI 意象拆解" : (prof?.nickname ?? "梦游者"),
         avatarUrl: prof?.avatarUrl ?? null,
       };
     });

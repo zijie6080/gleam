@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Moon, Send } from "lucide-react";
+import { Moon, Send, Star } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import HeartbeatBanner from "@/components/HeartbeatBanner";
 import VoiceRing from "@/components/VoiceRing";
@@ -27,6 +27,9 @@ export default function CapturePage() {
   const [transcribing, setTranscribing] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [voiceUnavailable, setVoiceUnavailable] = useState(false);
+  // 结构化补录（可选）：情绪 -1 惊惧 ~ 1 平静；清醒度 1-5
+  const [emotion, setEmotion] = useState<number | null>(null);
+  const [lucidity, setLucidity] = useState<number | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -99,6 +102,8 @@ export default function CapturePage() {
           text: trimmed,
           userId: anonUserId(),
           localHour: new Date().getHours(),
+          ...(emotion !== null && { emotionScore: emotion }),
+          ...(lucidity !== null && { lucidity }),
         }),
       });
       const data = await res.json();
@@ -167,6 +172,50 @@ export default function CapturePage() {
             autoFocus
             className="w-full resize-none bg-transparent text-ink outline-none placeholder:text-muted"
           />
+          {/* 结构化补录：有内容时浮现，可跳过 */}
+          {text.trim() && (
+            <div className="space-y-4 border-t border-glass-border pt-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-muted">
+                  <span>惊惧</span>
+                  <span>{emotion === null ? "醒来时的情绪（可不选）" : ""}</span>
+                  <span>平静</span>
+                </div>
+                <input
+                  type="range"
+                  min={-1}
+                  max={1}
+                  step={0.1}
+                  value={emotion ?? 0}
+                  onChange={(e) => setEmotion(Number(e.target.value))}
+                  aria-label="情绪"
+                  className="h-1 w-full cursor-pointer appearance-none rounded-full bg-glass-border accent-gold"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">清醒度</span>
+                <span className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setLucidity(n === lucidity ? null : n)}
+                      aria-label={`清醒度 ${n} 星`}
+                      className="transition-opacity duration-fade hover:opacity-70"
+                    >
+                      <Star
+                        strokeWidth={1.5}
+                        className={`h-4 w-4 ${
+                          n <= (lucidity ?? 0) ? "text-gold" : "text-muted"
+                        }`}
+                        fill={n <= (lucidity ?? 0) ? "currentColor" : "none"}
+                      />
+                    </button>
+                  ))}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between pt-2">
             {error ? (
               <span className="pr-3 text-xs text-gold-deep">{error}</span>
