@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { moderate, MODERATION_MESSAGE } from "@/lib/moderation";
+import { llmBudgetOk } from "@/lib/budget";
 
 const INTERPRET_PROMPT = `你是拾梦的 AI 意象拆解者。对一个梦境给出一段温和的文化视角解读（120–200 字）。
 
@@ -24,6 +25,8 @@ async function generateBaseline(dreamId: string, text: string) {
     .limit(1)
     .maybeSingle();
   if (existing) return;
+  // 每日成本熔断：额度用完就不生成兜底解读（投放本身不受影响）
+  if (!(await llmBudgetOk())) return;
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",

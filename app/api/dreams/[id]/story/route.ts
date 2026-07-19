@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { llmBudgetOk, BUDGET_MESSAGE } from "@/lib/budget";
 
 const STORY_PROMPT = `你是一个梦境书写者。把用户碎片化的梦境记录补全为一篇完整的短篇（600–1200 字）。
 
@@ -49,6 +50,10 @@ export async function POST(
     // 深夜模式的梦不做任何生成
     if (dream.is_night_mode) {
       return NextResponse.json({ error: "night mode" }, { status: 409 });
+    }
+    // 每日成本熔断
+    if (!(await llmBudgetOk())) {
+      return NextResponse.json({ error: BUDGET_MESSAGE }, { status: 429 });
     }
 
     const res = await fetch("https://api.deepseek.com/chat/completions", {

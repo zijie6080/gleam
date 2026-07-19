@@ -3,6 +3,7 @@ import { extractMotifs, type ExtractedMotif } from "@/lib/deepseek";
 import { embed } from "@/lib/embedding";
 import { detectCrisis, isNightMode } from "@/lib/night";
 import { MATCH_THRESHOLD } from "@/lib/match";
+import { llmBudgetOk } from "@/lib/budget";
 
 export type CreateDreamInput = {
   text: string;
@@ -49,7 +50,7 @@ export async function createDream(input: CreateDreamInput) {
   // 极短输入（如"梦见水"）只存文本，不跑 AI 管线（v2 §8）
   const tooShort = input.text.trim().length < 6;
 
-  if (!crisis && !nightMode && !tooShort) {
+  if (!crisis && !nightMode && !tooShort && (await llmBudgetOk())) {
     try {
       motifs = await extractMotifs(input.text);
       for (const m of motifs) {

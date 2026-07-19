@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractMotifs } from "@/lib/deepseek";
 import { embed } from "@/lib/embedding";
+import { llmBudgetOk, BUDGET_MESSAGE } from "@/lib/budget";
 
 // 「再生成」：对已有梦重跑意象提取 + embedding（旧关联清掉重建）
 export async function POST(
@@ -21,6 +22,10 @@ export async function POST(
     }
     if (dream.is_night_mode) {
       return NextResponse.json({ error: "night mode" }, { status: 409 });
+    }
+    // 每日成本熔断
+    if (!(await llmBudgetOk())) {
+      return NextResponse.json({ error: BUDGET_MESSAGE }, { status: 429 });
     }
 
     await db.from("dream_motifs").delete().eq("dream_id", id);
