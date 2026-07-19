@@ -4,6 +4,7 @@ import BottomNav from "@/components/BottomNav";
 import IamtooButton from "@/components/IamtooButton";
 import LikeButton from "@/components/LikeButton";
 import CommentSection from "@/components/CommentSection";
+import ReportDreamButton from "@/components/ReportDreamButton";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,9 @@ export default async function PlazaDreamPage({
 
         <div className="flex items-center gap-6 px-1">
           <LikeButton dreamId={id} />
+          <span className="ml-auto">
+            <ReportDreamButton dreamId={id} />
+          </span>
         </div>
 
         <p className="pt-2 text-xs text-muted">以下为文化视角参考，非心理诊断</p>

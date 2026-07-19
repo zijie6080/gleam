@@ -6,12 +6,25 @@ import OpenChatButton from "@/components/OpenChatButton";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
 
-// 广场顶部匹配横幅：AI 匹配到"和你梦见同一件事的人"时才出现。
-// 有匹配 → 显示数字 + 48h 匿名对话入口。0 匹配不渲染（不显示"0 个人"）。
+type Summary = {
+  strong: number;
+  weak: number;
+  motif: string | null;
+  window: "today" | "month" | "ever";
+};
+
+const WINDOW_LABEL = {
+  today: "今晚",
+  month: "这个月",
+  ever: "曾经",
+} as const;
+
+// 广场顶部匹配：
+// 强匹配（同梦）→ 横幅 + 48h 对话入口；
+// 只有弱匹配（相似意象）→ 安静一行，无对话入口；
+// 全无 → 不渲染。
 export default function MatchBanner() {
-  const [data, setData] = useState<{ count: number; motif: string | null } | null>(
-    null,
-  );
+  const [data, setData] = useState<Summary | null>(null);
 
   useEffect(() => {
     fetch(`/api/resonance/summary?userId=${anonUserId()}`)
@@ -20,16 +33,28 @@ export default function MatchBanner() {
       .catch(() => {});
   }, []);
 
-  if (!data || data.count === 0) return null;
+  if (!data || (data.strong === 0 && data.weak === 0)) return null;
+
+  const when = WINDOW_LABEL[data.window] ?? "曾经";
+
+  if (data.strong > 0) {
+    return (
+      <motion.section {...fadeIn} className="glass space-y-4 p-6">
+        <p className="font-serif text-xl leading-relaxed text-ink">
+          {when}，有{data.strong > 1 ? ` ${data.strong} 个` : ""}人和你梦见了
+          {data.motif ? `「${data.motif}」` : "同一件事"}。
+        </p>
+        <OpenChatButton />
+        <p className="text-xs text-muted">
+          双方都同意才会开启 · 48 小时后自动关闭
+        </p>
+      </motion.section>
+    );
+  }
 
   return (
-    <motion.section {...fadeIn} className="glass space-y-4 p-6">
-      <p className="font-serif text-xl leading-relaxed text-ink">
-        今晚，有 {data.count} 个人和你梦见了
-        {data.motif ? `「${data.motif}」` : "同一件事"}。
-      </p>
-      <OpenChatButton />
-      <p className="text-xs text-muted">双方都同意才会开启 · 48 小时后自动关闭</p>
-    </motion.section>
+    <motion.p {...fadeIn} className="px-2 text-sm leading-relaxed text-muted">
+      {when}，有 {data.weak} 个梦和你的梦隔着相似的影子。
+    </motion.p>
   );
 }

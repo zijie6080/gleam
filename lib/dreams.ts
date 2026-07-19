@@ -2,8 +2,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { extractMotifs, type ExtractedMotif } from "@/lib/deepseek";
 import { embed } from "@/lib/embedding";
 import { detectCrisis, isNightMode } from "@/lib/night";
-import { MATCH_THRESHOLD } from "@/lib/match";
 import { llmBudgetOk } from "@/lib/budget";
+import { matchDream } from "@/lib/matching";
 
 export type CreateDreamInput = {
   text: string;
@@ -86,17 +86,17 @@ export async function createDream(input: CreateDreamInput) {
         .eq("id", dream.id);
       if (embErr) throw new Error(embErr.message);
 
-      // 心跳通知：这个新梦命中了谁，就告诉谁（每人一条未读，不叠加）
-      if (input.userId) {
-        const { data: matches } = await db.rpc("recent_similar_dreams", {
-          query_embedding: JSON.stringify(vector),
-          self_dream: dream.id,
-          self_user: input.userId,
-          min_similarity: MATCH_THRESHOLD,
+      // 心跳通知：混合打分后只通知强匹配（同梦）的对方（每人一条未读，不叠加）
+      if (input.userId && !nightMode) {
+        const tier = await matchDream({
+          id: dream.id,
+          user_id: input.userId,
+          embedding: JSON.stringify(vector),
+          emotion_score: input.emotionScore ?? null,
         });
         const users = [
           ...new Set(
-            ((matches ?? []) as { user_id: string }[]).map((m) => m.user_id),
+            tier.strong.map((m) => m.user_id).filter(Boolean) as string[],
           ),
         ];
         for (const uid of users) {

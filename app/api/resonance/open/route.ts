@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { MATCH_THRESHOLD } from "@/lib/match";
+import { matchLatestFor } from "@/lib/matching";
 
-// 48h 匿名对话（v2 §6.4）。
-// 只能由系统发起：入口是"系统检测到的高相似匹配"，用户不能挑人搭话。
-// 本接口做的是：对当前用户最近的梦，找 24h 内相似度最高的另一个人的梦，
-// 找到/创建这一对的会话，并记录本方同意。双方都同意才开启，48h 后关闭。
-// 响应中永远不包含对方的任何身份信息。
+// 48h 匿名对话。只能由系统发起——入口是强匹配（同梦），弱匹配不开对话。
+// 双方同意才开启；响应永远不含对方身份。
+// 限速：每用户每天最多发起 3 次（反滥用）。
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const userId = body.userId;
@@ -17,44 +15,38 @@ export async function POST(req: NextRequest) {
   try {
     const db = supabaseAdmin();
 
-    // 我的最近一个有向量的梦
-    const { data: mine } = await db
-      .from("dreams")
-      .select("id, embedding")
-      .eq("user_id", userId)
-      .not("embedding", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!mine) {
-      return NextResponse.json({ error: "no dream yet" }, { status: 404 });
+    // 限速：今天由我发起同意的会话数
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { count: initiated } = await db
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .or(`and(user_a.eq.${userId},consent_a.eq.true),and(user_b.eq.${userId},consent_b.eq.true)`)
+      .gte("created_at", today.toISOString());
+    if ((initiated ?? 0) >= 3) {
+      return NextResponse.json(
+        { error: "今天发起的对话够多了，明天再来。" },
+        { status: 429 },
+      );
     }
 
-    // 系统匹配：24h 内、非本人、相似度最高
-    const { data: matches, error: mErr } = await db.rpc("match_dreams", {
-      query_embedding: mine.embedding,
-      match_count: 5,
-      exclude_user: userId,
-      min_similarity: MATCH_THRESHOLD,
-    });
-    if (mErr) throw new Error(mErr.message);
-    const partner = (matches ?? []).find(
-      (m: { user_id: string | null }) => m.user_id,
-    );
-    if (!partner) {
+    // 强匹配才有对话资格
+    const tier = await matchLatestFor(userId);
+    const partner = tier?.strong.find((s) => s.user_id);
+    if (!tier || !partner) {
       return NextResponse.json({ error: "no match" }, { status: 404 });
     }
 
-    // 这一对梦的会话（方向无关，统一排序）
+    const mineDream = tier.dreamId;
     const [a, b] =
-      mine.id < partner.dream_id
+      mineDream < partner.dream_id
         ? [
-            { dream: mine.id, user: userId },
-            { dream: partner.dream_id, user: partner.user_id },
+            { dream: mineDream, user: userId },
+            { dream: partner.dream_id, user: partner.user_id! },
           ]
         : [
-            { dream: partner.dream_id, user: partner.user_id },
-            { dream: mine.id, user: userId },
+            { dream: partner.dream_id, user: partner.user_id! },
+            { dream: mineDream, user: userId },
           ];
 
     let { data: conv } = await db
@@ -79,7 +71,6 @@ export async function POST(req: NextRequest) {
       conv = created;
     }
 
-    // 记录本方同意
     const side = conv.user_a === userId ? "a" : "b";
     const consentField = side === "a" ? "consent_a" : "consent_b";
     if (!conv[consentField]) {
@@ -102,7 +93,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       conversationId: conv.id,
       opened: Boolean(conv.opened_at),
-      // 对方是否已同意只以布尔透出，不含任何身份信息
       waitingForOther: !conv.opened_at,
     });
   } catch (e) {

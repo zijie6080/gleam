@@ -15,6 +15,7 @@ import {
   User,
 } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import PushToggle from "@/components/PushToggle";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -431,6 +432,7 @@ export default function ProfilePage() {
       </motion.section>
 
       <motion.section {...fadeIn} className="space-y-3">
+        <PushToggle />
         <button
           onClick={() =>
             (window.location.href = `/api/export?userId=${anonUserId()}`)

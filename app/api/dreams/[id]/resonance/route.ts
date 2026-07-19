@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { MATCH_THRESHOLD } from "@/lib/match";
+import { matchDream } from "@/lib/matching";
 
-// 产品心跳（v2 §6.2）：24 小时内相似度超过阈值的梦有多少个。
-// count 为 0 时前端不展示（不推送"有 0 个人"）。
+// 梦境详情的心跳数据（v2 混合打分 + 分层 + 跨时间降级）。
+// strong/weak 都为 0 时前端不展示。
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -13,37 +13,23 @@ export async function GET(
     const db = supabaseAdmin();
     const { data: dream, error } = await db
       .from("dreams")
-      .select("embedding")
+      .select("id, user_id, embedding, emotion_score, is_night_mode")
       .eq("id", id)
       .single();
     if (error) {
       return NextResponse.json({ error: "dream not found" }, { status: 404 });
     }
-    if (!dream.embedding) return NextResponse.json({ count: 0, motif: null });
+    if (!dream.embedding || dream.is_night_mode) {
+      return NextResponse.json({ strong: 0, weak: 0, motif: null, window: "today" });
+    }
 
-    const { data: count, error: rpcErr } = await db.rpc(
-      "count_recent_similar",
-      {
-        query_embedding: dream.embedding,
-        self_dream: id,
-        min_similarity: MATCH_THRESHOLD,
-      },
-    );
-    if (rpcErr) throw new Error(rpcErr.message);
-
-    // 该梦权重最高的意象，作为推送里的主题词（如「坠落」）
-    const { data: motifRow } = await db
-      .from("dream_motifs")
-      .select("weight, motifs(name)")
-      .eq("dream_id", id)
-      .order("weight", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const motifs = motifRow?.motifs as { name: string } | { name: string }[] | null;
-    const motif = Array.isArray(motifs) ? motifs[0]?.name : motifs?.name;
-
-    return NextResponse.json({ count: count ?? 0, motif: motif ?? null });
+    const tier = await matchDream(dream);
+    return NextResponse.json({
+      strong: tier.strong.length,
+      weak: tier.weak.length,
+      motif: tier.motif,
+      window: tier.window,
+    });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

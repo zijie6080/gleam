@@ -50,7 +50,12 @@ export default function DreamView({ dream }: { dream: DreamData }) {
   const [customWord, setCustomWord] = useState("");
   const [wordCloud, setWordCloud] = useState<{ word: string; count: number }[]>([]);
   const [wordTotal, setWordTotal] = useState(0);
-  const [resonance, setResonance] = useState<{ count: number; motif: string | null } | null>(null);
+  const [resonance, setResonance] = useState<{
+    strong: number;
+    weak: number;
+    motif: string | null;
+    window: "today" | "month" | "ever";
+  } | null>(null);
   const [findings, setFindings] = useState<{ message: string }[]>([]);
 
   const date = new Date(dream.created_at);
@@ -302,14 +307,24 @@ export default function DreamView({ dream }: { dream: DreamData }) {
           </div>
         )}
 
-        {/* 产品心跳：0 时不显示 */}
-        {resonance && resonance.count > 0 && (
+        {/* 产品心跳：强匹配醒目，仅弱匹配安静一行，全 0 不显示 */}
+        {resonance && resonance.strong > 0 && (
           <div className="glass p-5">
             <p className="font-serif text-lg leading-relaxed text-ink">
-              昨晚，有 {resonance.count} 个人和你梦见了
+              {resonance.window === "today"
+                ? "昨晚"
+                : resonance.window === "month"
+                  ? "这个月"
+                  : "曾经"}
+              ，有 {resonance.strong} 个人和你梦见了
               {resonance.motif ? `「${resonance.motif}」` : "同一件事"}。
             </p>
           </div>
+        )}
+        {resonance && resonance.strong === 0 && resonance.weak > 0 && (
+          <p className="text-sm leading-relaxed text-muted">
+            有 {resonance.weak} 个梦，和这个梦隔着相似的影子。
+          </p>
         )}
 
         {/* 第一级：「我也是」——最高频社交行为，最大点击区域 */}

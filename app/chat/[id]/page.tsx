@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Send } from "lucide-react";
+import { Flag, Send, X } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { anonUserId } from "@/lib/user";
 
@@ -73,15 +73,50 @@ export default function ChatPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-32 pt-14">
-      <header className="space-y-1 pb-6">
-        <h1 className="font-serif text-2xl text-ink">匿名对话</h1>
-        <p className="text-xs text-muted">
-          {status === "waiting"
-            ? "等待对方同意…"
-            : hoursLeft !== null
-              ? `剩余约 ${hoursLeft} 小时 · 关闭后不留痕`
-              : "48 小时后自动关闭"}
-        </p>
+      <header className="flex items-start justify-between pb-6">
+        <div className="space-y-1">
+          <h1 className="font-serif text-2xl text-ink">匿名对话</h1>
+          <p className="text-xs text-muted">
+            {status === "waiting"
+              ? "等待对方同意…"
+              : hoursLeft !== null
+                ? `剩余约 ${hoursLeft} 小时 · 关闭后不留痕`
+                : "48 小时后自动关闭"}
+          </p>
+        </div>
+        {/* 自保出口：随时离开且不留痕 */}
+        <div className="flex gap-4 pt-1 text-muted">
+          <button
+            onClick={async () => {
+              if (!window.confirm("举报这个对话？内容会留证给我们复核，对话立即关闭。")) return;
+              await fetch(`/api/conversations/${id}/report`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: anonUserId() }),
+              }).catch(() => {});
+              setStatus("closed");
+            }}
+            aria-label="举报"
+            className="transition-opacity duration-fade hover:opacity-70"
+          >
+            <Flag strokeWidth={1.5} className="h-4 w-4" />
+          </button>
+          <button
+            onClick={async () => {
+              if (!window.confirm("关闭对话？消息会立即销毁，不可恢复。")) return;
+              await fetch(`/api/conversations/${id}/close`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: anonUserId() }),
+              }).catch(() => {});
+              setStatus("closed");
+            }}
+            aria-label="关闭对话"
+            className="transition-opacity duration-fade hover:opacity-70"
+          >
+            <X strokeWidth={1.5} className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 space-y-3 overflow-y-auto">

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Minus, Plus } from "lucide-react";
 import StarCanvas from "@/components/StarCanvas";
 import BottomNav from "@/components/BottomNav";
+import ShareStarmapButton from "@/components/ShareStarmapButton";
 import { fadeIn } from "@/lib/motion";
 import { anonUserId } from "@/lib/user";
 
@@ -125,6 +126,11 @@ export default function StarmapPage() {
           再记 {MIN_MY_DREAMS - myDreams} 个梦，就能解锁只属于你的星图
         </p>
       )}
+
+      {/* 分享 */}
+      <div className="absolute bottom-44 left-6">
+        <ShareStarmapButton dreamCount={map.points.length} />
+      </div>
 
       {/* 缩放控件 */}
       <div className="absolute bottom-44 right-6 flex flex-col items-center gap-3 text-muted">
