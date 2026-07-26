@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Feather, Orbit, User, Waves } from "lucide-react";
+import { BookOpen, Feather, Orbit, User, Waves } from "lucide-react";
 
-// 信息架构 v2：记录 / 共鸣 / 星图 / 我的
-// 共鸣 = 共鸣广场（公开梦境信息流）
 const TABS = [
   { href: "/capture", label: "记录", Icon: Feather },
+  { href: "/dreams", label: "梦境", Icon: BookOpen },
   { href: "/plaza", label: "共鸣", Icon: Waves },
   { href: "/starmap", label: "星图", Icon: Orbit },
   { href: "/profile", label: "我的", Icon: User },
@@ -20,21 +19,21 @@ export default function BottomNav() {
     <nav className="fixed inset-x-0 bottom-0 z-10 bg-gradient-to-t from-night-start to-transparent pb-6 pt-4">
       <div className="mx-auto flex max-w-md items-start justify-around">
         {TABS.map(({ href, label, Icon }) => {
-          const isActive =
+          const active =
             pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link
               key={href}
               href={href}
               className={`flex flex-col items-center gap-1.5 transition-opacity duration-fade ${
-                isActive ? "text-gold" : "text-muted hover:opacity-70"
+                active ? "text-gold" : "text-muted hover:opacity-70"
               }`}
             >
               <Icon strokeWidth={1.5} className="h-6 w-6" />
               <span className="text-xs">{label}</span>
               <span
                 className={`h-1 w-1 rounded-full ${
-                  isActive ? "bg-gold" : "bg-transparent"
+                  active ? "bg-gold" : "bg-transparent"
                 }`}
               />
             </Link>

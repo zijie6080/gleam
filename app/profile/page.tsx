@@ -2,9 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import {
+  BookOpen,
   Check,
   Download,
   HeartHandshake,
@@ -16,8 +17,7 @@ import {
 } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import PushToggle from "@/components/PushToggle";
-import { fadeIn } from "@/lib/motion";
-import { anonUserId } from "@/lib/user";
+import { authFetch, ensureSession } from "@/lib/apiClient";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 const heatClasses = [
@@ -29,71 +29,79 @@ const heatClasses = [
 
 export default function ProfilePage() {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [stats, setStats] = useState({ dreamCount: 0, iamtooCount: 0 });
   const [days, setDays] = useState<number[]>(Array(35).fill(0));
-  const [deleting, setDeleting] = useState(false);
-
-  // 资料
   const [nickname, setNickname] = useState("梦游者");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
-  const [profileMsg, setProfileMsg] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // 账号
   const [accountLabel, setAccountLabel] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"user" | "email">("user");
   const [authEmail, setAuthEmail] = useState("");
   const [authUser, setAuthUser] = useState("");
   const [authPass, setAuthPass] = useState("");
-  const [authMsg, setAuthMsg] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [authMsg, setAuthMsg] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function loadPrivateData() {
+    const [statsResponse, profileResponse] = await Promise.all([
+      authFetch("/api/stats"),
+      authFetch("/api/profile"),
+    ]);
+    if (statsResponse.ok) {
+      const data = await statsResponse.json();
+      setStats({
+        dreamCount: data.dreamCount ?? 0,
+        iamtooCount: data.iamtooCount ?? 0,
+      });
+      if (Array.isArray(data.days)) setDays(data.days);
+    }
+    if (profileResponse.ok) {
+      const data = await profileResponse.json();
+      setNickname(data.nickname ?? "梦游者");
+      setAvatarUrl(data.avatarUrl ?? null);
+    }
+  }
 
   useEffect(() => {
-    const uid = anonUserId();
-    fetch(`/api/stats?userId=${uid}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setStats({
-          dreamCount: d.dreamCount ?? 0,
-          iamtooCount: d.iamtooCount ?? 0,
-        });
-        if (Array.isArray(d.days)) setDays(d.days);
-      })
-      .catch(() => {});
-    fetch(`/api/profile?userId=${uid}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setNickname(d.nickname ?? "梦游者");
-        setAvatarUrl(d.avatarUrl ?? null);
-      })
-      .catch(() => {});
-    supabaseBrowser()
-      ?.auth.getUser()
-      .then(({ data }) => {
-        const u = data.user;
-        if (!u) return;
-        const username = u.user_metadata?.username as string | undefined;
-        const email = u.email?.endsWith("@users.gleam.internal")
-          ? null
-          : u.email;
-        setAccountLabel(username ?? email ?? null);
-      });
+    loadPrivateData();
+    const sb = supabaseBrowser();
+    sb?.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (!user || user.is_anonymous) return;
+      const username = user.user_metadata?.username as string | undefined;
+      const email = user.email?.endsWith("@users.gleam.internal")
+        ? null
+        : user.email;
+      setAccountLabel(username ?? email ?? null);
+    });
+    const listener = sb?.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setRecovery(true);
+        setAuthOpen(true);
+        setAuthMode("email");
+      }
+    });
+    return () => listener?.data.subscription.unsubscribe();
   }, []);
 
   async function saveProfile(form: FormData) {
-    form.append("userId", anonUserId());
-    const res = await fetch("/api/profile", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) {
-      setProfileMsg(data.error);
+    const response = await authFetch("/api/profile", {
+      method: "POST",
+      body: form,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setAuthMsg(data.error ?? "保存失败");
       return;
     }
-    setProfileMsg(null);
     setNickname(data.nickname);
     if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+    setAuthMsg(null);
   }
 
   async function saveName() {
@@ -103,54 +111,55 @@ export default function ProfilePage() {
     setEditingName(false);
   }
 
-  async function onAvatarPick(file: File | undefined) {
+  async function onAvatarPick(file?: File) {
     if (!file) return;
     const form = new FormData();
     form.append("avatar", file);
     await saveProfile(form);
   }
 
-  // 登录成功后的统一收尾：迁移旧匿名数据 → 刷新
-  async function afterAuth(session: {
-    user: { id: string };
-    access_token: string;
-  }) {
-    const old = localStorage.getItem("gleam_anon_id");
-    if (old && old !== session.user.id) {
+  async function finishLogin(
+    session: { user: { id: string }; access_token: string },
+    sourceToken?: string,
+  ) {
+    if (sourceToken) {
       await fetch("/api/account/migrate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from: old, token: session.access_token }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ sourceToken }),
       }).catch(() => {});
     }
     localStorage.setItem("gleam_anon_id", session.user.id);
     window.location.reload();
   }
 
-  // 用户名账号：注册走服务端（设备限一账号），登录直接用合成邮箱
-  async function userAuth(kind: "in" | "up") {
+  async function usernameAuth(kind: "in" | "up") {
     const sb = supabaseBrowser();
-    if (!sb) return setAuthMsg("登录服务未配置");
-    if (authBusy) return;
+    if (!sb || authBusy) return;
     setAuthBusy(true);
     setAuthMsg(null);
     try {
+      const sourceSession = await ensureSession();
       if (kind === "up") {
-        const res = await fetch("/api/auth/register", {
+        const response = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             username: authUser.trim(),
             password: authPass,
-            deviceId: anonUserId(),
+            deviceId: sourceSession?.user.id,
           }),
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setAuthMsg(data.error);
+        const data = await response.json();
+        if (!response.ok) {
+          setAuthMsg(data.error ?? "注册失败");
           return;
         }
       }
+
       const { usernameToEmail, USERNAME_RE } = await import("@/lib/account");
       if (!USERNAME_RE.test(authUser.trim())) {
         setAuthMsg("用户名需为 3–16 位字母、数字或下划线");
@@ -161,36 +170,71 @@ export default function ProfilePage() {
         password: authPass,
       });
       if (error || !data.session) {
-        setAuthMsg(kind === "in" ? "用户名或密码不对" : error?.message ?? "登录失败");
+        setAuthMsg(kind === "in" ? "用户名或密码不对" : "登录失败");
         return;
       }
-      await afterAuth(data.session);
+      await finishLogin(data.session, sourceSession?.access_token);
     } finally {
       setAuthBusy(false);
     }
   }
 
-  async function signIn(kind: "in" | "up") {
+  async function emailAuth(kind: "in" | "up") {
     const sb = supabaseBrowser();
-    if (!sb) {
-      setAuthMsg("登录服务未配置");
+    if (!sb || authBusy) return;
+    setAuthBusy(true);
+    setAuthMsg(null);
+    try {
+      const sourceSession = await ensureSession();
+      const result =
+        kind === "in"
+          ? await sb.auth.signInWithPassword({
+              email: authEmail,
+              password: authPass,
+            })
+          : await sb.auth.signUp({
+              email: authEmail,
+              password: authPass,
+            });
+      if (result.error) {
+        setAuthMsg(result.error.message);
+        return;
+      }
+      if (!result.data.session) {
+        setAuthMsg("注册成功，请去邮箱点击确认链接。");
+        return;
+      }
+      await finishLogin(result.data.session, sourceSession?.access_token);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function sendResetEmail() {
+    const sb = supabaseBrowser();
+    if (!sb || !authEmail) {
+      setAuthMsg("请先填写邮箱");
       return;
     }
-    setAuthMsg(null);
-    const fn =
-      kind === "in"
-        ? sb.auth.signInWithPassword({ email: authEmail, password: authPass })
-        : sb.auth.signUp({ email: authEmail, password: authPass });
-    const { data, error } = await fn;
+    const { error } = await sb.auth.resetPasswordForEmail(authEmail, {
+      redirectTo: `${window.location.origin}/profile`,
+    });
+    setAuthMsg(error ? error.message : "重设密码邮件已经发出，请检查邮箱。");
+  }
+
+  async function updatePassword() {
+    const sb = supabaseBrowser();
+    if (!sb || authPass.length < 6) {
+      setAuthMsg("新密码至少 6 位");
+      return;
+    }
+    const { error } = await sb.auth.updateUser({ password: authPass });
     if (error) {
       setAuthMsg(error.message);
       return;
     }
-    if (!data.session) {
-      setAuthMsg("注册成功，请去邮箱点确认链接后再登录。");
-      return;
-    }
-    await afterAuth(data.session);
+    setRecovery(false);
+    setAuthMsg("密码已经更新。");
   }
 
   async function signOut() {
@@ -199,258 +243,160 @@ export default function ProfilePage() {
     window.location.reload();
   }
 
-  async function deleteAccount() {
-    if (
-      !window.confirm(
-        "确定要彻底删除吗？所有的梦、意象、回响都会消失，无法恢复。",
-      )
-    )
+  async function exportData() {
+    const response = await authFetch("/api/export");
+    if (!response.ok) {
+      setAuthMsg((await response.json()).error ?? "导出失败");
       return;
-    setDeleting(true);
-    const res = await fetch(`/api/account?userId=${anonUserId()}`, {
-      method: "DELETE",
-    }).catch(() => null);
-    if (res?.ok) {
-      await supabaseBrowser()?.auth.signOut();
-      localStorage.removeItem("gleam_anon_id");
-      localStorage.removeItem("gleam_draft");
-      router.push("/capture");
-    } else {
-      setDeleting(false);
     }
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "gleam-data.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm("确定彻底删除账号和全部数据吗？此操作无法恢复。")) return;
+    setDeleting(true);
+    const response = await authFetch("/api/account", { method: "DELETE" });
+    if (!response.ok) {
+      setAuthMsg((await response.json()).error ?? "删除失败");
+      setDeleting(false);
+      return;
+    }
+    localStorage.clear();
+    router.push("/capture");
+    router.refresh();
   }
 
   return (
     <main className="mx-auto min-h-screen max-w-md space-y-8 px-6 pb-32 pt-14">
-      {/* 头像 + 昵称 */}
-      <motion.header {...fadeIn} className="flex items-center gap-5">
+      <header className="flex items-center gap-5">
         <button
           onClick={() => fileRef.current?.click()}
+          className="glass flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden !rounded-full"
           aria-label="更换头像"
-          className="glass flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden !rounded-full transition-opacity duration-fade hover:opacity-70"
         >
           {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt=""
-              className="h-full w-full object-cover"
-              style={{ filter: "saturate(0.85)" }}
-            />
+            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
           ) : (
-            <User strokeWidth={1.5} className="h-8 w-8 text-muted" />
+            <User className="h-8 w-8 text-muted" strokeWidth={1.5} />
           )}
         </button>
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           className="hidden"
-          onChange={(e) => onAvatarPick(e.target.files?.[0])}
+          onChange={(event) => onAvatarPick(event.target.files?.[0])}
         />
         <div className="min-w-0">
           {editingName ? (
-            <span className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <input
                 value={nameInput}
-                onChange={(e) => setNameInput(e.target.value.slice(0, 12))}
-                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                onChange={(event) => setNameInput(event.target.value.slice(0, 12))}
+                className="w-36 border-b border-gold bg-transparent font-serif text-2xl text-ink outline-none"
                 autoFocus
-                className="w-36 border-b border-gold-deep bg-transparent font-serif text-2xl text-ink outline-none"
               />
               <button onClick={saveName} aria-label="保存昵称">
-                <Check strokeWidth={1.5} className="h-5 w-5 text-gold" />
+                <Check className="h-5 w-5 text-gold" />
               </button>
-            </span>
+            </div>
           ) : (
             <button
               onClick={() => {
                 setNameInput(nickname);
                 setEditingName(true);
               }}
-              className="flex items-center gap-2 transition-opacity duration-fade hover:opacity-70"
+              className="flex items-center gap-2"
             >
               <span className="font-serif text-3xl text-ink">{nickname}</span>
-              <Pencil strokeWidth={1.5} className="h-4 w-4 text-muted" />
+              <Pencil className="h-4 w-4 text-muted" />
             </button>
           )}
           <p className="mt-1 truncate text-sm text-muted">
-            {accountLabel ?? "匿名 · 数据只在这台设备"}
+            {accountLabel ?? "匿名账号"}
           </p>
-          {profileMsg && (
-            <p className="mt-1 text-xs text-gold-deep">{profileMsg}</p>
-          )}
         </div>
-      </motion.header>
+      </header>
 
-      {/* 账号 */}
-      <motion.section {...fadeIn}>
+      <section>
         {accountLabel ? (
-          <button
-            onClick={signOut}
-            className="glass flex w-full items-center gap-3 p-5 text-sm text-muted transition-opacity duration-fade hover:opacity-70"
-          >
-            <LogOut strokeWidth={1.5} className="h-5 w-5" />
-            退出登录
+          <button onClick={signOut} className="glass flex w-full items-center gap-3 p-5 text-sm text-muted">
+            <LogOut className="h-5 w-5" />退出登录
           </button>
         ) : !authOpen ? (
-          <button
-            onClick={() => setAuthOpen(true)}
-            className="glass flex w-full items-center gap-3 p-5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
-          >
-            <LogIn strokeWidth={1.5} className="h-5 w-5 text-gold" />
-            注册账号，换设备也能找回你的梦
+          <button onClick={() => setAuthOpen(true)} className="glass flex w-full items-center gap-3 p-5 text-sm text-ink">
+            <LogIn className="h-5 w-5 text-gold" />注册或登录，换设备也能找回梦境
           </button>
         ) : (
           <div className="glass space-y-3 p-5">
-            {/* 账号 / 邮箱 切换 */}
             <div className="flex gap-4 text-sm">
-              {(
-                [
-                  ["user", "账号密码"],
-                  ["email", "邮箱"],
-                ] as const
-              ).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  onClick={() => {
-                    setAuthMode(mode);
-                    setAuthMsg(null);
-                  }}
-                  className={
-                    authMode === mode
-                      ? "border-b border-gold pb-1 text-gold"
-                      : "pb-1 text-muted transition-opacity duration-fade hover:opacity-70"
-                  }
-                >
-                  {label}
-                </button>
-              ))}
+              <button onClick={() => setAuthMode("user")} className={authMode === "user" ? "text-gold" : "text-muted"}>账号密码</button>
+              <button onClick={() => setAuthMode("email")} className={authMode === "email" ? "text-gold" : "text-muted"}>邮箱</button>
             </div>
-
             {authMode === "user" ? (
-              <>
-                <input
-                  value={authUser}
-                  onChange={(e) => setAuthUser(e.target.value.slice(0, 16))}
-                  placeholder="用户名（3–16 位字母数字下划线）"
-                  autoCapitalize="none"
-                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-                />
-                <input
-                  type="password"
-                  value={authPass}
-                  onChange={(e) => setAuthPass(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && userAuth("in")}
-                  placeholder="密码（至少 6 位）"
-                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-                />
-                {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => userAuth("in")}
-                    disabled={authBusy}
-                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70 disabled:opacity-40"
-                  >
-                    登录
-                  </button>
-                  <button
-                    onClick={() => userAuth("up")}
-                    disabled={authBusy}
-                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70 disabled:opacity-40"
-                  >
-                    注册
-                  </button>
-                </div>
-                <p className="text-xs text-muted">一台设备只能注册一个账号</p>
-              </>
+              <input value={authUser} onChange={(event) => setAuthUser(event.target.value)} placeholder="用户名" className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none" />
+            ) : (
+              <input type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="邮箱" className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none" />
+            )}
+            <input type="password" value={authPass} onChange={(event) => setAuthPass(event.target.value)} placeholder={recovery ? "输入新密码" : "密码（至少 6 位）"} className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none" />
+            {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
+            {recovery ? (
+              <button onClick={updatePassword} className="glass w-full py-2.5 text-sm text-gold">保存新密码</button>
             ) : (
               <>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="邮箱"
-                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-                />
-                <input
-                  type="password"
-                  value={authPass}
-                  onChange={(e) => setAuthPass(e.target.value)}
-                  placeholder="密码（至少 6 位）"
-                  className="w-full border-b border-glass-border bg-transparent py-2 text-sm text-ink outline-none placeholder:text-muted"
-                />
-                {authMsg && <p className="text-xs text-gold-deep">{authMsg}</p>}
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => signIn("in")}
-                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-gold transition-opacity duration-fade hover:opacity-70"
-                  >
-                    登录
-                  </button>
-                  <button
-                    onClick={() => signIn("up")}
-                    className="glass flex-1 !rounded-2xl py-2.5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
-                  >
-                    注册
-                  </button>
+                <div className="flex gap-3">
+                  <button onClick={() => authMode === "user" ? usernameAuth("in") : emailAuth("in")} disabled={authBusy} className="glass flex-1 py-2.5 text-sm text-gold">登录</button>
+                  <button onClick={() => authMode === "user" ? usernameAuth("up") : emailAuth("up")} disabled={authBusy} className="glass flex-1 py-2.5 text-sm text-ink">注册</button>
                 </div>
+                {authMode === "email" && (
+                  <button onClick={sendResetEmail} className="text-xs text-muted">忘记密码？发送重设邮件</button>
+                )}
               </>
             )}
           </div>
         )}
-      </motion.section>
+      </section>
 
-      <motion.section {...fadeIn} className="grid grid-cols-2 gap-4">
+      <Link href="/dreams" className="glass flex items-center gap-3 p-5 text-sm text-ink">
+        <BookOpen className="h-5 w-5 text-gold" />查看和管理我的梦境
+      </Link>
+
+      <section className="grid grid-cols-2 gap-4">
         <div className="glass p-6">
           <p className="font-serif text-4xl text-gold">{stats.dreamCount}</p>
           <p className="mt-2 text-sm text-muted">累计记录的梦</p>
         </div>
         <div className="glass p-6">
-          <p className="flex items-baseline gap-2 font-serif text-4xl text-gold">
-            {stats.iamtooCount}
-            <HeartHandshake strokeWidth={1.5} className="h-5 w-5 self-center" />
+          <p className="flex items-center gap-2 font-serif text-4xl text-gold">
+            {stats.iamtooCount}<HeartHandshake className="h-5 w-5" />
           </p>
-          <p className="mt-2 text-sm text-muted">被「我也是」的次数</p>
-          <p className="mt-1 text-xs text-gold-deep">仅自己可见</p>
+          <p className="mt-2 text-sm text-muted">收到的共鸣</p>
         </div>
-      </motion.section>
+      </section>
 
-      <motion.section {...fadeIn} className="glass space-y-5 p-6">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-serif text-xl text-ink">梦境日历</h2>
-          <span className="text-xs text-muted">近 35 天</span>
-        </div>
+      <section className="glass space-y-5 p-6">
+        <h2 className="font-serif text-xl text-ink">近 35 天</h2>
         <div className="grid grid-cols-7 gap-2">
-          {days.map((level, i) => (
-            <span
-              key={i}
-              className={`aspect-square rounded-md ${heatClasses[Math.min(level, 3)]}`}
-            />
+          {days.map((level, index) => (
+            <span key={index} className={`aspect-square rounded-md ${heatClasses[Math.min(level, 3)]}`} />
           ))}
         </div>
-        <p className="text-xs text-muted">颜色深浅 · 梦境情绪强度</p>
-      </motion.section>
+      </section>
 
-      <motion.section {...fadeIn} className="space-y-3">
+      <section className="space-y-3">
         <PushToggle />
-        <button
-          onClick={() =>
-            (window.location.href = `/api/export?userId=${anonUserId()}`)
-          }
-          className="glass flex w-full items-center gap-3 p-5 text-sm text-ink transition-opacity duration-fade hover:opacity-70"
-        >
-          <Download strokeWidth={1.5} className="h-5 w-5 text-gold" />
-          导出全部数据
+        <button onClick={exportData} className="glass flex w-full items-center gap-3 p-5 text-sm text-ink">
+          <Download className="h-5 w-5 text-gold" />导出全部数据
         </button>
-        <button
-          onClick={deleteAccount}
-          disabled={deleting}
-          className="glass flex w-full items-center gap-3 p-5 text-sm text-muted transition-opacity duration-fade hover:opacity-70 disabled:opacity-40"
-        >
-          <Trash2 strokeWidth={1.5} className="h-5 w-5" />
-          {deleting ? "正在删除…" : "彻底删除账号及所有数据"}
+        <button onClick={deleteAccount} disabled={deleting} className="glass flex w-full items-center gap-3 p-5 text-sm text-muted disabled:opacity-40">
+          <Trash2 className="h-5 w-5" />{deleting ? "正在删除…" : "彻底删除账号及所有数据"}
         </button>
-      </motion.section>
+      </section>
 
       <BottomNav />
     </main>

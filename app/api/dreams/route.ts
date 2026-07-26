@@ -1,47 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDream } from "@/lib/dreams";
+import { requireUser } from "@/lib/serverAuth";
 
-// POST /api/dreams — 文本入库 + 意象提取 + embedding
-// body: { text, userId?, emotionScore?, lucidity?, isRecurring?, localHour? }
 export async function POST(req: NextRequest) {
-  let body: {
-    text?: unknown;
-    userId?: string;
-    emotionScore?: number;
-    lucidity?: number;
-    isRecurring?: boolean;
-    localHour?: number;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
-  }
+  const auth = await requireUser(req);
+  if (!auth.ok) return auth.response;
 
-  if (typeof body.text !== "string" || body.text.trim().length === 0) {
-    return NextResponse.json({ error: "text is required" }, { status: 400 });
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body.text !== "string") {
+    return NextResponse.json({ error: "梦境内容不能为空" }, { status: 400 });
+  }
+  const text = body.text.trim();
+  if (!text || text.length > 5000) {
+    return NextResponse.json(
+      { error: text ? "梦境内容不能超过 5000 字" : "梦境内容不能为空" },
+      { status: 400 },
+    );
   }
   if (
     body.lucidity !== undefined &&
     (!Number.isInteger(body.lucidity) || body.lucidity < 1 || body.lucidity > 5)
   ) {
     return NextResponse.json(
-      { error: "lucidity must be an integer 1-5" },
+      { error: "清醒度必须是 1 到 5" },
+      { status: 400 },
+    );
+  }
+  if (
+    body.emotionScore !== undefined &&
+    (typeof body.emotionScore !== "number" ||
+      body.emotionScore < -1 ||
+      body.emotionScore > 1)
+  ) {
+    return NextResponse.json(
+      { error: "情绪值必须在 -1 到 1 之间" },
       { status: 400 },
     );
   }
 
   try {
     const result = await createDream({
-      text: body.text.trim(),
-      userId: body.userId,
+      text,
+      userId: auth.user.id,
       emotionScore: body.emotionScore,
       lucidity: body.lucidity,
-      isRecurring: body.isRecurring,
+      isRecurring: Boolean(body.isRecurring),
       localHour: body.localHour,
     });
     return NextResponse.json(result, { status: 201 });
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 500 },
+    );
   }
 }
+
