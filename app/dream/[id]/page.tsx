@@ -1,33 +1,50 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import DreamView, { type DreamData } from "@/components/DreamView";
-import { supabaseAdmin } from "@/lib/supabase";
+import BottomNav from "@/components/BottomNav";
+import { authFetch } from "@/lib/apiClient";
 
-export const dynamic = "force-dynamic";
-
-export default async function DreamDetailPage({
+export default function DreamDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const db = supabaseAdmin();
+  const { id } = use(params);
+  const [dream, setDream] = useState<DreamData | null>(null);
+  const [missing, setMissing] = useState(false);
 
-  const { data: dream, error } = await db
-    .from("dreams")
-    .select("id, raw_text, lucidity, emotion_score, is_night_mode, created_at")
-    .eq("id", id)
-    .single();
-  if (error || !dream) notFound();
+  useEffect(() => {
+    authFetch(`/api/dreams/${id}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          setMissing(true);
+          return;
+        }
+        const data = await response.json();
+        setDream(data.dream);
+      })
+      .catch(() => setMissing(true));
+  }, [id]);
 
-  const { data: links } = await db
-    .from("dream_motifs")
-    .select("weight, motifs(name)")
-    .eq("dream_id", id)
-    .order("weight", { ascending: false });
-
-  const motifs = (links ?? [])
-    .map((l) => (l.motifs as unknown as { name: string })?.name)
-    .filter(Boolean);
-
-  return <DreamView dream={{ ...dream, motifs } as DreamData} />;
+  if (missing) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-6 px-6 text-center">
+        <p className="font-serif text-2xl text-ink">没有找到这个梦。</p>
+        <Link href="/dreams" className="text-sm text-gold">
+          返回我的梦境
+        </Link>
+        <BottomNav />
+      </main>
+    );
+  }
+  if (!dream) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center text-sm text-muted">
+        正在翻找梦境…
+      </main>
+    );
+  }
+  return <DreamView dream={dream} />;
 }

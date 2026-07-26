@@ -1,34 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { requireUser } from "@/lib/serverAuth";
 
-// 匿名设备 ID → 登录账号的数据迁移。
-// 目标身份从 Auth token 里验出，不信任客户端声明，防止把别人的数据搬走。
+// 把当前设备的匿名 Auth 用户数据迁到刚登录的正式账号。
+// 同时校验来源和目标两份 token，不再相信浏览器直接声明的 userId。
 export async function POST(req: NextRequest) {
+  const target = await requireUser(req);
+  if (!target.ok) return target.response;
+
   const body = await req.json().catch(() => ({}));
-  const from = typeof body.from === "string" ? body.from : "";
-  const token = typeof body.token === "string" ? body.token : "";
-  if (!from || !token) {
-    return NextResponse.json(
-      { error: "from and token are required" },
-      { status: 400 },
-    );
+  const sourceToken =
+    typeof body.sourceToken === "string" ? body.sourceToken : "";
+  if (!sourceToken) {
+    return NextResponse.json({ error: "缺少原设备身份凭证" }, { status: 400 });
   }
 
   try {
-    const db = supabaseAdmin();
-    const { data: userData, error: authErr } = await db.auth.getUser(token);
-    if (authErr || !userData.user) {
-      return NextResponse.json({ error: "invalid token" }, { status: 401 });
+    const { db, user: targetUser } = target;
+    const { data: sourceData, error } = await db.auth.getUser(sourceToken);
+    if (error || !sourceData.user) {
+      return NextResponse.json({ error: "原设备身份无效" }, { status: 401 });
     }
-    const to = userData.user.id;
-    if (from === to) return NextResponse.json({ ok: true, moved: 0 });
 
-    // 仅当 from 是"无主"的匿名 ID（不属于任何 Auth 用户）时才允许迁移
-    const { data: owner } = await db.auth.admin
-      .getUserById(from)
-      .catch(() => ({ data: { user: null } }));
-    if (owner?.user) {
-      return NextResponse.json({ error: "source is an account" }, { status: 403 });
+    const sourceUser = sourceData.user;
+    if (!sourceUser.is_anonymous) {
+      return NextResponse.json(
+        { error: "只能迁移匿名账号的数据" },
+        { status: 403 },
+      );
+    }
+    if (sourceUser.id === targetUser.id) {
+      return NextResponse.json({ ok: true, moved: false });
     }
 
     for (const table of [
@@ -36,15 +37,29 @@ export async function POST(req: NextRequest) {
       "resonances_iamtoo",
       "echo_words",
       "echoes",
+      "notifications",
+      "push_subscriptions",
     ]) {
-      await db.from(table).update({ user_id: to }).eq("user_id", from);
+      await db
+        .from(table)
+        .update({ user_id: targetUser.id })
+        .eq("user_id", sourceUser.id);
     }
-    await db.from("conversations").update({ user_a: to }).eq("user_a", from);
-    await db.from("conversations").update({ user_b: to }).eq("user_b", from);
-    await db.from("notifications").update({ user_id: to }).eq("user_id", from);
+    await db
+      .from("conversations")
+      .update({ user_a: targetUser.id })
+      .eq("user_a", sourceUser.id);
+    await db
+      .from("conversations")
+      .update({ user_b: targetUser.id })
+      .eq("user_b", sourceUser.id);
 
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    await db.auth.admin.deleteUser(sourceUser.id);
+    return NextResponse.json({ ok: true, moved: true });
+  } catch (error) {
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 500 },
+    );
   }
 }

@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { requireUser } from "@/lib/serverAuth";
 
-// 保存/删除 Web Push 订阅
 export async function POST(req: NextRequest) {
+  const auth = await requireUser(req);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json().catch(() => ({}));
-  const userId = typeof body.userId === "string" ? body.userId : "";
-  const sub = body.subscription;
-  if (!userId || !sub?.endpoint || !sub?.keys) {
-    return NextResponse.json(
-      { error: "userId and subscription are required" },
-      { status: 400 },
-    );
+  const subscription = body.subscription;
+  if (!subscription?.endpoint || !subscription?.keys) {
+    return NextResponse.json({ error: "订阅内容无效" }, { status: 400 });
   }
-  const db = supabaseAdmin();
-  const { error } = await db.from("push_subscriptions").upsert({
-    endpoint: sub.endpoint,
-    user_id: userId,
-    keys: sub.keys,
+  const { error } = await auth.db.from("push_subscriptions").upsert({
+    endpoint: subscription.endpoint,
+    user_id: auth.user.id,
+    keys: subscription.keys,
   });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -25,12 +22,18 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireUser(req);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json().catch(() => ({}));
   const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
   if (!endpoint) {
-    return NextResponse.json({ error: "endpoint is required" }, { status: 400 });
+    return NextResponse.json({ error: "缺少订阅地址" }, { status: 400 });
   }
-  const db = supabaseAdmin();
-  await db.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  await auth.db
+    .from("push_subscriptions")
+    .delete()
+    .eq("endpoint", endpoint)
+    .eq("user_id", auth.user.id);
   return NextResponse.json({ ok: true });
 }
